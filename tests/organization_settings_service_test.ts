@@ -30,6 +30,7 @@ const SETTINGS: OrganizationSettings = {
   logoMimeType: null,
   defaultCurrency: "CZK",
   defaultDueDays: 14,
+  defaultInvoiceTemplateId: "10000000-0000-4000-8000-000000000001",
   invoiceFooter: null,
   customNote: null,
 };
@@ -49,8 +50,22 @@ const INPUT: OrganizationSettingsInput = {
   website: "",
   defaultCurrency: "CZK",
   defaultDueDays: "14",
+  defaultInvoiceTemplateId: "10000000-0000-4000-8000-000000000001",
   invoiceFooter: "",
   customNote: "",
+};
+
+const TEMPLATE_LOOKUP = {
+  find: (templateId: string) =>
+    Promise.resolve({
+      id: templateId,
+      name: "Default",
+      description: null,
+      isActive: true,
+      currentVersionId: crypto.randomUUID(),
+      currentVersion: 1,
+      updatedAt: new Date(),
+    }),
 };
 
 class FakeSettingsRepository implements OrganizationSettingsRepository {
@@ -105,7 +120,11 @@ Deno.test("organization logo is validated and stored under an opaque key", async
     { type: "image/png" },
   );
 
-  const updated = await new OrganizationSettingsService(repository, storage)
+  const updated = await new OrganizationSettingsService(
+    repository,
+    storage,
+    TEMPLATE_LOOKUP,
+  )
     .update({
       organizationId: SETTINGS.id,
       userId: crypto.randomUUID(),
@@ -136,6 +155,7 @@ Deno.test("organization logo rejects spoofed MIME type", async () => {
   const service = new OrganizationSettingsService(
     new FakeSettingsRepository(),
     new MemoryStorage(),
+    TEMPLATE_LOOKUP,
   );
   let rejected = false;
   try {

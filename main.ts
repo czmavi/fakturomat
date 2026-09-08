@@ -23,6 +23,8 @@ const securityMiddleware = define.middleware(async (ctx) => {
   ctx.state.currentOrganization = null;
 
   const response = await ctx.next();
+  const isTemplatePreview = ctx.url.pathname.startsWith("/templates/") &&
+    ctx.url.pathname.endsWith("/preview");
   response.headers.set(
     "Content-Security-Policy",
     [
@@ -31,7 +33,7 @@ const securityMiddleware = define.middleware(async (ctx) => {
       "connect-src 'self'",
       "font-src 'self'",
       "form-action 'self'",
-      "frame-ancestors 'none'",
+      isTemplatePreview ? "frame-ancestors 'self'" : "frame-ancestors 'none'",
       "img-src 'self' data:",
       "object-src 'none'",
       "script-src 'self'",
@@ -40,7 +42,10 @@ const securityMiddleware = define.middleware(async (ctx) => {
   );
   response.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
   response.headers.set("X-Content-Type-Options", "nosniff");
-  response.headers.set("X-Frame-Options", "DENY");
+  response.headers.set(
+    "X-Frame-Options",
+    isTemplatePreview ? "SAMEORIGIN" : "DENY",
+  );
 
   if (csrfState.created) {
     response.headers.append(

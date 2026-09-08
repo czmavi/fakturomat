@@ -4,9 +4,11 @@ import { hashPassword } from "@/domain/auth/password.ts";
 import { PostgresAuthRepository } from "@/repositories/auth_repository.ts";
 import { PostgresBankAccountRepository } from "@/repositories/bank_account_repository.ts";
 import { PostgresContactRepository } from "@/repositories/contact_repository.ts";
+import { PostgresInvoiceTemplateRepository } from "@/repositories/invoice_template_repository.ts";
 import { PostgresOrganizationRepository } from "@/repositories/organization_repository.ts";
 import { PostgresOrganizationSettingsRepository } from "@/repositories/organization_settings_repository.ts";
 import { AuthService } from "@/services/auth_service.ts";
+import { InvoiceTemplateService } from "@/services/invoice_template_service.ts";
 
 const testDatabaseUrl = Deno.env.get("TEST_DATABASE_URL");
 
@@ -494,6 +496,91 @@ Deno.test({
     } finally {
       await sql`DELETE FROM organizations WHERE id = ${organizationId}`;
       await sql`DELETE FROM users WHERE id IN (${ownerId}, ${outsiderId})`;
+      await closeDb();
+    }
+  },
+});
+
+Deno.test({
+  name: "invoice template integration: immutable concurrency-safe versions",
+  ignore: testDatabaseUrl === undefined,
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    Deno.env.set("DATABASE_URL", testDatabaseUrl!);
+    await migrate();
+
+    const sql = getDb();
+    const authRepository = new PostgresAuthRepository(sql);
+    const repository = new PostgresInvoiceTemplateRepository(sql);
+    const service = new InvoiceTemplateService(repository);
+    const userId = crypto.randomUUID();
+    let templateId: string | null = null;
+
+    try {
+      await authRepository.createUser({
+        id: userId,
+        email: `template-${userId}@example.test`,
+        displayName: "Template editor",
+        passwordHash: await hashPassword("integration-password", 10_000),
+      });
+
+      const defaults = await repository.list();
+      assert(
+        defaults.some((template) => template.name === "Čistá profesionální"),
+        "default invoice template was not seeded",
+      );
+
+      const template = await service.create({
+        userId,
+        name: "Integration template",
+        description: "Version test",
+        html: "<h1>{{invoice.number}}</h1><table>{{invoice.items}}</table>",
+        css: "body { color: #18211c; }",
+      });
+      templateId = template.id;
+      const original = await repository.findVersion(
+        template.id,
+        template.currentVersionId,
+      );
+      assert(original?.version === 1, "initial template version is missing");
+
+      await Promise.all(
+        Array.from({ length: 4 }, (_, index) =>
+          service.createVersion({
+            templateId: template.id,
+            userId,
+            name: "Integration template",
+            description: `Concurrent version ${index + 2}`,
+            html: `<h1>{{invoice.number}}</h1><p>Version ${index + 2}</p>`,
+            css: "body { color: #18211c; }",
+          })),
+      );
+
+      const versions = await repository.listVersions(template.id);
+      assert(
+        versions.length === 5,
+        "concurrent version creation lost a version",
+      );
+      assert(
+        new Set(versions.map((version) => version.version)).size === 5,
+        "concurrent version creation produced duplicate numbers",
+      );
+      const unchangedOriginal = await repository.findVersion(
+        template.id,
+        template.currentVersionId,
+      );
+      assert(
+        unchangedOriginal?.html === original.html,
+        "creating a version mutated historical template content",
+      );
+    } finally {
+      if (templateId !== null) {
+        await sql`UPDATE invoice_templates SET current_version_id = NULL WHERE id = ${templateId}`;
+        await sql`DELETE FROM invoice_template_versions WHERE invoice_template_id = ${templateId}`;
+        await sql`DELETE FROM invoice_templates WHERE id = ${templateId}`;
+      }
+      await sql`DELETE FROM users WHERE id = ${userId}`;
       await closeDb();
     }
   },

@@ -3,6 +3,7 @@ import type {
   OrganizationSettingsInput,
 } from "@/domain/organizations/settings.ts";
 import { isOrganizationType } from "@/domain/organizations/types.ts";
+import type { InvoiceTemplate } from "@/domain/invoices/template_types.ts";
 import type { OrganizationSettingsRepository } from "@/repositories/organization_settings_repository.ts";
 import type { ObjectStorage } from "@/services/storage/object_storage.ts";
 
@@ -166,6 +167,9 @@ export class OrganizationSettingsService {
   constructor(
     private readonly repository: OrganizationSettingsRepository,
     private readonly storage: ObjectStorage,
+    private readonly templateRepository: {
+      find(templateId: string): Promise<InvoiceTemplate | null>;
+    },
   ) {}
 
   async update(input: {
@@ -182,6 +186,15 @@ export class OrganizationSettingsService {
     if (current === null) return false;
 
     const settings = normalizeSettings(current, input.values);
+    const template = await this.templateRepository.find(
+      input.values.defaultInvoiceTemplateId,
+    );
+    if (template === null || !template.isActive) {
+      throw new OrganizationSettingsValidationError(
+        "Vyberte dostupnou fakturační šablonu.",
+      );
+    }
+    settings.defaultInvoiceTemplateId = template.id;
     let newKey: string | null = null;
     const previousKey = current.logoStorageKey;
 

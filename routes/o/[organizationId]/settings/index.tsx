@@ -2,12 +2,14 @@ import { page } from "fresh";
 import { Head } from "fresh/runtime";
 import { define } from "@/utils.ts";
 import type { BankAccount } from "@/domain/banking/types.ts";
+import type { InvoiceTemplate } from "@/domain/invoices/template_types.ts";
 import { formatBankAccount } from "@/domain/banking/types.ts";
 import type {
   OrganizationSettings,
   OrganizationSettingsInput,
 } from "@/domain/organizations/settings.ts";
 import { PostgresBankAccountRepository } from "@/repositories/bank_account_repository.ts";
+import { PostgresInvoiceTemplateRepository } from "@/repositories/invoice_template_repository.ts";
 import { PostgresOrganizationSettingsRepository } from "@/repositories/organization_settings_repository.ts";
 import { isValidCsrfToken } from "@/services/csrf_service.ts";
 import {
@@ -22,6 +24,7 @@ interface SettingsPageData {
   hasLogo: boolean;
   error: string | null;
   saved: boolean;
+  templates: InvoiceTemplate[];
 }
 
 function inputFromSettings(
@@ -42,6 +45,7 @@ function inputFromSettings(
     website: settings.website ?? "",
     defaultCurrency: settings.defaultCurrency,
     defaultDueDays: String(settings.defaultDueDays),
+    defaultInvoiceTemplateId: settings.defaultInvoiceTemplateId,
     invoiceFooter: settings.invoiceFooter ?? "",
     customNote: settings.customNote ?? "",
   };
@@ -64,6 +68,7 @@ function inputFromForm(form: FormData): OrganizationSettingsInput {
     website: value("website"),
     defaultCurrency: value("default_currency"),
     defaultDueDays: value("default_due_days"),
+    defaultInvoiceTemplateId: value("default_invoice_template_id"),
     invoiceFooter: value("invoice_footer"),
     customNote: value("custom_note"),
   };
@@ -74,9 +79,10 @@ export const handler = define.handlers<SettingsPageData>({
     const user = ctx.state.user!;
     const organizationId = ctx.params.organizationId;
     const settingsRepository = new PostgresOrganizationSettingsRepository();
-    const [settings, bankAccounts] = await Promise.all([
+    const [settings, bankAccounts, templates] = await Promise.all([
       settingsRepository.findForUser(organizationId, user.id),
       new PostgresBankAccountRepository().listForUser(organizationId, user.id),
+      new PostgresInvoiceTemplateRepository().list(),
     ]);
     if (settings === null) {
       return new Response("Stránka nebyla nalezena.", { status: 404 });
@@ -87,6 +93,7 @@ export const handler = define.handlers<SettingsPageData>({
       hasLogo: settings.logoStorageKey !== null,
       error: null,
       saved: ctx.url.searchParams.get("saved") === "1",
+      templates,
     });
   },
   async POST(ctx) {
@@ -97,12 +104,13 @@ export const handler = define.handlers<SettingsPageData>({
     const repository = new PostgresOrganizationSettingsRepository();
 
     const renderError = async (error: string, status: number) => {
-      const [settings, bankAccounts] = await Promise.all([
+      const [settings, bankAccounts, templates] = await Promise.all([
         repository.findForUser(organizationId, user.id),
         new PostgresBankAccountRepository().listForUser(
           organizationId,
           user.id,
         ),
+        new PostgresInvoiceTemplateRepository().list(),
       ]);
       return page({
         values,
@@ -111,6 +119,7 @@ export const handler = define.handlers<SettingsPageData>({
           settings?.logoStorageKey !== undefined,
         error,
         saved: false,
+        templates,
       }, { status });
     };
 
@@ -129,6 +138,7 @@ export const handler = define.handlers<SettingsPageData>({
       const updated = await new OrganizationSettingsService(
         repository,
         getObjectStorage(),
+        new PostgresInvoiceTemplateRepository(),
       ).update({
         organizationId,
         userId: user.id,
@@ -385,6 +395,31 @@ export default define.page<typeof handler>(({ data, state, params }) => {
                 required
                 class={inputClass}
               />
+            </label>
+            <label class="sm:col-span-2">
+              <span class="mb-2 block text-sm font-medium">
+                Výchozí šablona faktury
+              </span>
+              <select
+                name="default_invoice_template_id"
+                class={inputClass}
+                required
+              >
+                {data.templates.filter((template) => template.isActive).map((
+                  template,
+                ) => (
+                  <option
+                    value={template.id}
+                    selected={data.values.defaultInvoiceTemplateId ===
+                      template.id}
+                  >
+                    {template.name} · v{template.currentVersion}
+                  </option>
+                ))}
+              </select>
+              <span class="mt-2 block text-xs text-[#758078]">
+                Použije se jako výchozí při vystavení nové faktury.
+              </span>
             </label>
             <label class="sm:col-span-2">
               <span class="mb-2 block text-sm font-medium">

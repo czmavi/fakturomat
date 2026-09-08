@@ -114,6 +114,12 @@ export default define.layout(({ Component, state, url }) => {
           >
             Nastavení
           </a>
+          <a
+            href="/templates"
+            class="mt-4 block rounded-xl border border-white/15 px-4 py-3 text-sm font-semibold hover:bg-white/8"
+          >
+            Šablony faktur
+          </a>
         </nav>
       </aside>
 

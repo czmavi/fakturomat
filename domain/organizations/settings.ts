@@ -18,6 +18,7 @@ export interface OrganizationSettings {
   logoMimeType: string | null;
   defaultCurrency: string;
   defaultDueDays: number;
+  defaultInvoiceTemplateId: string;
   invoiceFooter: string | null;
   customNote: string | null;
 }
@@ -37,6 +38,7 @@ export interface OrganizationSettingsInput {
   website: string;
   defaultCurrency: string;
   defaultDueDays: string;
+  defaultInvoiceTemplateId: string;
   invoiceFooter: string;
   customNote: string;
 }

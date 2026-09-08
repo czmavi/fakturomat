@@ -21,6 +21,7 @@ interface OrganizationSettingsRow {
   logo_mime_type: string | null;
   default_currency: string;
   default_due_days: number;
+  default_invoice_template_id: string;
   invoice_footer: string | null;
   custom_note: string | null;
 }
@@ -54,6 +55,7 @@ function fromRow(row: OrganizationSettingsRow): OrganizationSettings {
     logoMimeType: row.logo_mime_type,
     defaultCurrency: row.default_currency,
     defaultDueDays: row.default_due_days,
+    defaultInvoiceTemplateId: row.default_invoice_template_id,
     invoiceFooter: row.invoice_footer,
     customNote: row.custom_note,
   };
@@ -66,7 +68,8 @@ const SETTINGS_COLUMNS = `
   organizations.country, organizations.email, organizations.phone,
   organizations.website, organizations.logo_storage_key,
   organizations.logo_mime_type, organizations.default_currency,
-  organizations.default_due_days, organizations.invoice_footer,
+  organizations.default_due_days, organizations.default_invoice_template_id,
+  organizations.invoice_footer,
   organizations.custom_note
 `;
 
@@ -115,6 +118,7 @@ export class PostgresOrganizationSettingsRepository
         logo_mime_type = ${input.logoMimeType},
         default_currency = ${input.defaultCurrency},
         default_due_days = ${input.defaultDueDays},
+        default_invoice_template_id = ${input.defaultInvoiceTemplateId},
         invoice_footer = ${input.invoiceFooter},
         custom_note = ${input.customNote},
         updated_at = now()

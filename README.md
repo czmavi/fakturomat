@@ -4,9 +4,11 @@ Interní webová aplikace pro správu faktur, nákladových dokladů a bankovní
 transakcí více nezávislých subjektů. Projekt používá Deno, Fresh 2, Preact,
 TypeScript v strict režimu a PostgreSQL přes `postgres.js`.
 
-Aktuálně jsou dokončené etapy 1 až 4: aplikační bootstrap, migrace, interní
+Aktuálně jsou dokončené etapy 1 až 5: aplikační bootstrap, migrace, interní
 přihlášení, organizace, tenant scope, nastavení subjektu, bankovní účty a
-oddělené knihovny kontaktů.
+oddělené knihovny kontaktů. Součástí jsou také globální fakturační šablony s
+neměnnými verzemi, bezpečným náhledem a volbou výchozí šablony pro každý
+subjekt.
 
 ## Lokální spuštění
 
@@ -60,8 +62,9 @@ deno task build
 ```
 
 `check` spouští formatter check, lint a type check. Integrační testy ověřují
-přihlášení, revokaci session, izolaci organizací a celý lifecycle kontaktu.
-Vytvořená testovací data po sobě odstraní.
+přihlášení, revokaci session, izolaci organizací, celý lifecycle kontaktu a
+souběžné vytváření neměnných verzí šablon. Vytvořená testovací data po sobě
+odstraní.
 
 ## Architektura
 
@@ -87,6 +90,12 @@ MIME typ. Lokální implementace zapisuje soubory atomicky, odmítá traversal k
 upload přijímá pouze PNG, JPEG nebo WebP do velikosti 2 MB s kontrolou signatury
 souboru.
 
+Fakturační šablony jsou globální. Každá úprava vytvoří novou verzi a již uložený
+HTML/CSS obsah se přes aplikační rozhraní nemění. Renderer povoluje jen známé
+placeholdery, hodnoty escapuje a validátor odmítá aktivní prvky, JavaScript i
+externí zdroje. Náhled běží v sandboxovaném iframe a je dostupný jen přihlášeným
+uživatelům.
+
 ## Migrace
 
 - `0001_auth.sql` – tabulky `users` a `sessions`, unikátní a aktivní session
@@ -99,15 +108,18 @@ souboru.
   výchozího účtu na subjekt.
 - `0004_contacts.sql` – organization-scoped kontakty, archivace a indexy pro
   výpis a hledání.
+- `0005_invoice_templates.sql` – globální šablony, neměnné verze, profesionální
+  výchozí šablona a její vazba na nastavení subjektu.
 
-## Známá omezení etap 1–4
+## Známá omezení etap 1–5
 
 - Zatím není UI pro změnu nebo obnovu hesla; uživatel se zakládá přes CLI.
 - Není implementováno omezení počtu chybných přihlášení ani externí identity
   provider.
 - Auth integrační test vyžaduje explicitní `TEST_DATABASE_URL`.
 - Pozvání dalších uživatelů a správa memberships zatím nemají UI.
-- Výchozí fakturační šablona bude dostupná po implementaci globálních šablon.
+- Globální šablony může zatím spravovat každý přihlášený uživatel; jemnější
+  administrátorské role nejsou součástí dosavadních etap.
 - Bankovní účty zatím nemají API napojení; lze je však používat jako manuální
   fakturační údaje. Fio integrace přijde v pozdější etapě.
 - Kontakty lze archivovat, ale jejich obnovení z archivu zatím není součástí
