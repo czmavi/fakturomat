@@ -1,0 +1,19 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: fakturomat
+      POSTGRES_USER: fakturomat
+      POSTGRES_PASSWORD: fakturomat
+    ports:
+      - "127.0.0.1:55433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fakturomat -d fakturomat"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - fakturomat_postgres_data:/var/lib/postgresql/data
+
+volumes:
+  fakturomat_postgres_data:

@@ -6,7 +6,8 @@ export default define.page(function App({ Component }) {
       <head>
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <title>fakturomat</title>
+        <meta name="color-scheme" content="light" />
+        <title>Fakturomat</title>
       </head>
       <body>
         <Component />
