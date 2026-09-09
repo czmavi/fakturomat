@@ -20,7 +20,7 @@ export const handler = define.handlers({
       renderInvoiceTemplate(
         version.html,
         version.css,
-        createPreviewInvoiceViewModel(),
+        await createPreviewInvoiceViewModel(),
       ),
       {
         headers: {

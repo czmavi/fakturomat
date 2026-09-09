@@ -12,8 +12,8 @@ function assert(condition: boolean, message: string): asserts condition {
   if (!condition) throw new Error(message);
 }
 
-Deno.test("template renderer escapes scalar and item values", () => {
-  const viewModel = createPreviewInvoiceViewModel();
+Deno.test("template renderer escapes scalar and item values", async () => {
+  const viewModel = await createPreviewInvoiceViewModel();
   viewModel.supplier.name = '<img src=x onerror="alert(1)">';
   viewModel.invoice.items[0].description = "<script>alert(1)</script>";
   const output = renderInvoiceTemplate(
@@ -28,10 +28,14 @@ Deno.test("template renderer escapes scalar and item values", () => {
     "escaped scalar is missing",
   );
   assert(output.includes("<svg"), "trusted QR SVG was not rendered");
+  assert(
+    output.includes('http-equiv="Content-Security-Policy"'),
+    "rendered invoice has no defense-in-depth CSP",
+  );
 });
 
-Deno.test("template renderer drops unsafe QR SVG", () => {
-  const viewModel = createPreviewInvoiceViewModel();
+Deno.test("template renderer drops unsafe QR SVG", async () => {
+  const viewModel = await createPreviewInvoiceViewModel();
   viewModel.payment.qrSvg = '<svg onload="alert(1)"></svg>';
   const output = renderInvoiceTemplate("{{payment.qr}}", "", viewModel);
   assert(!output.includes("onload"), "unsafe QR SVG was rendered");
@@ -43,6 +47,10 @@ Deno.test("template validation rejects JavaScript and unknown placeholders", () 
     '<img src="x" onerror="alert(1)">',
     "<p>{{customer.secret}}</p>",
     '<img src="https://tracking.example/pixel.png">',
+    '<img src="/etc/passwd">',
+    '<img srcset="file:///tmp/secret.png">',
+    "<svg><foreignObject>unsafe namespace</foreignObject></svg>",
+    '<p style="background:red">inline style</p>',
   ];
   for (const html of invalidHtml) {
     let rejected = false;
@@ -61,16 +69,32 @@ Deno.test("template validation rejects JavaScript and unknown placeholders", () 
 });
 
 Deno.test("template validation rejects CSS network access", () => {
-  let rejected = false;
-  try {
-    validateInvoiceTemplate({
-      name: "Invalid CSS",
-      description: "",
-      html: "<p>{{invoice.number}}</p>",
-      css: "body { background: url(https://tracking.example/pixel); }",
-    });
-  } catch (error) {
-    rejected = error instanceof InvoiceTemplateValidationError;
+  for (
+    const css of [
+      "body { background: url(https://tracking.example/pixel); }",
+      "body { background: u\\72l(https://tracking.example/pixel); }",
+      'body { background: image-set("https://tracking.example/pixel" 1x); }',
+      "@font-face { src: local(system-ui); }",
+    ]
+  ) {
+    let rejected = false;
+    try {
+      validateInvoiceTemplate({
+        name: "Invalid CSS",
+        description: "",
+        html: "<p>{{invoice.number}}</p>",
+        css,
+      });
+    } catch (error) {
+      rejected = error instanceof InvoiceTemplateValidationError;
+    }
+    assert(rejected, `unsafe CSS was accepted: ${css}`);
   }
-  assert(rejected, "CSS url() was accepted");
+  const valid = validateInvoiceTemplate({
+    name: "Print CSS",
+    description: "",
+    html: "<main><p>{{invoice.number}}</p></main>",
+    css: "@page { size: A4; margin: 15mm; } body { color: #18211c; }",
+  });
+  assert(valid.css.startsWith("@page"), "safe print CSS was rejected");
 });

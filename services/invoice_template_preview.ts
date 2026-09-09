@@ -1,6 +1,26 @@
 import type { InvoiceViewModel } from "@/domain/invoices/invoice_view_model.ts";
+import { generateQrPaymentSvg } from "@/services/qr_payment_service.ts";
 
-export function createPreviewInvoiceViewModel(): InvoiceViewModel {
+export async function createPreviewInvoiceViewModel(): Promise<
+  InvoiceViewModel
+> {
+  const qrSvg = await generateQrPaymentSvg({
+    bankAccount: {
+      name: "Hlavní účet",
+      bankName: "Fio banka",
+      accountPrefix: null,
+      accountNumber: "2900000001",
+      bankCode: "2010",
+      iban: "CZ6320100000002900000001",
+      bic: "FIOBCZPPXXX",
+      currency: "CZK",
+    },
+    amount: "18500.00",
+    currency: "CZK",
+    variableSymbol: "20260001",
+    dueDate: "2026-09-22",
+    message: "FAKTURA 2026-0001",
+  });
   return {
     supplier: {
       name: "Studio Sever s.r.o.",
@@ -47,8 +67,7 @@ export function createPreviewInvoiceViewModel(): InvoiceViewModel {
     payment: {
       account: "2900000001/2010",
       iban: "CZ6320100000002900000001",
-      qrSvg:
-        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 90 90" role="img" aria-label="Ukázka QR platby"><rect width="90" height="90" fill="white"/><rect x="5" y="5" width="24" height="24" fill="#183e2a"/><rect x="61" y="5" width="24" height="24" fill="#183e2a"/><rect x="5" y="61" width="24" height="24" fill="#183e2a"/><path d="M38 8h8v8h8v8h-8v8h-8zm0 34h8v8h8v8h-8v8h-8zm22-4h8v8h8v8h-8v8h-8zm10 32h15v15H70z" fill="#183e2a"/></svg>',
+      qrSvg,
     },
   };
 }

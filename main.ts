@@ -1,10 +1,15 @@
 import { App, csrf, staticFiles } from "fresh";
+import { getAppEnvironment } from "@/config/env.ts";
 import { loadAuthState } from "@/services/auth_service.ts";
 import {
   createCsrfCookie,
   CSRF_COOKIE_NAME,
   getOrCreateCsrfToken,
 } from "@/services/csrf_service.ts";
+import {
+  applySecurityHeaders,
+  requestContentLengthIsTooLarge,
+} from "@/services/security_headers.ts";
 import { define, type State } from "./utils.ts";
 
 export const app = new App<State>();
@@ -13,6 +18,13 @@ app.use(staticFiles());
 app.use(csrf());
 
 const securityMiddleware = define.middleware(async (ctx) => {
+  if (requestContentLengthIsTooLarge(ctx.req)) {
+    return applySecurityHeaders(
+      new Response("Požadavek je příliš velký.", { status: 413 }),
+      ctx.url,
+      getAppEnvironment(),
+    );
+  }
   const csrfState = getOrCreateCsrfToken(ctx.req);
   const authState = await loadAuthState(ctx.req);
 
@@ -23,29 +35,7 @@ const securityMiddleware = define.middleware(async (ctx) => {
   ctx.state.currentOrganization = null;
 
   const response = await ctx.next();
-  const isTemplatePreview = ctx.url.pathname.startsWith("/templates/") &&
-    ctx.url.pathname.endsWith("/preview");
-  response.headers.set(
-    "Content-Security-Policy",
-    [
-      "default-src 'self'",
-      "base-uri 'self'",
-      "connect-src 'self'",
-      "font-src 'self'",
-      "form-action 'self'",
-      isTemplatePreview ? "frame-ancestors 'self'" : "frame-ancestors 'none'",
-      "img-src 'self' data:",
-      "object-src 'none'",
-      "script-src 'self'",
-      "style-src 'self'",
-    ].join("; "),
-  );
-  response.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
-  response.headers.set("X-Content-Type-Options", "nosniff");
-  response.headers.set(
-    "X-Frame-Options",
-    isTemplatePreview ? "SAMEORIGIN" : "DENY",
-  );
+  applySecurityHeaders(response, ctx.url, getAppEnvironment());
 
   if (csrfState.created) {
     response.headers.append(

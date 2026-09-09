@@ -8,6 +8,51 @@ import type { InvoiceTemplateRepository } from "@/repositories/invoice_template_
 
 export class InvoiceTemplateValidationError extends Error {}
 
+const ALLOWED_HTML_ELEMENTS = new Set([
+  "article",
+  "aside",
+  "blockquote",
+  "br",
+  "caption",
+  "col",
+  "colgroup",
+  "dd",
+  "div",
+  "dl",
+  "dt",
+  "em",
+  "figcaption",
+  "figure",
+  "footer",
+  "h1",
+  "h2",
+  "h3",
+  "h4",
+  "h5",
+  "h6",
+  "header",
+  "hr",
+  "li",
+  "main",
+  "ol",
+  "p",
+  "section",
+  "small",
+  "span",
+  "strong",
+  "sub",
+  "sup",
+  "table",
+  "tbody",
+  "td",
+  "th",
+  "thead",
+  "time",
+  "tr",
+  "u",
+  "ul",
+]);
+
 export function validateInvoiceTemplate(input: InvoiceTemplateInput): {
   name: string;
   description: string | null;
@@ -32,29 +77,32 @@ export function validateInvoiceTemplate(input: InvoiceTemplateInput): {
       "HTML nebo CSS šablony má neplatnou délku.",
     );
   }
-  if (
-    /<\s*(script|style|iframe|object|embed|link|meta|base|form)\b/i.test(html)
-  ) {
-    throw new InvoiceTemplateValidationError("HTML obsahuje zakázaný element.");
+  for (const match of html.matchAll(/<\s*\/?\s*([a-z][a-z0-9-]*)\b/gi)) {
+    if (!ALLOWED_HTML_ELEMENTS.has(match[1].toLocaleLowerCase("en-US"))) {
+      throw new InvoiceTemplateValidationError(
+        "HTML obsahuje nepovolený element.",
+      );
+    }
   }
   if (/\son[a-z]+\s*=/i.test(html) || /javascript\s*:/i.test(html)) {
     throw new InvoiceTemplateValidationError(
       "JavaScript není v šablonách povolen.",
     );
   }
-  if (/\b(?:src|href)\s*=\s*(?:["']\s*)?(?:https?:|\/\/|data:)/i.test(html)) {
+  if (/\b(?:src|srcset|href|xlink:href|poster)\s*=/i.test(html)) {
     throw new InvoiceTemplateValidationError(
-      "Šablona nesmí načítat externí zdroje.",
+      "Šablona nesmí načítat externí ani lokální zdroje.",
     );
   }
-  if (/\bstyle\s*=\s*["'][^"']*url\s*\(/i.test(html)) {
+  if (/\bstyle\s*=/i.test(html)) {
     throw new InvoiceTemplateValidationError(
-      "Inline styl nesmí načítat externí zdroje.",
+      "Inline style atribut není v šablonách povolen.",
     );
   }
   if (
-    /[<>]/.test(css) ||
-    /@import|expression\s*\(|javascript\s*:|url\s*\(/i.test(css)
+    /[<>\\]/.test(css) || /@(?!page\b)/i.test(css) ||
+    /expression\s*\(|(?:javascript|https?|file|data)\s*:|url\s*\(|image-set\s*\(/i
+      .test(css)
   ) {
     throw new InvoiceTemplateValidationError(
       "CSS obsahuje zakázanou konstrukci.",

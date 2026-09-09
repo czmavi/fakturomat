@@ -418,7 +418,7 @@ export default define.page<typeof handler>(({ data, state, params }) => {
                 ))}
               </select>
               <span class="mt-2 block text-xs text-[#758078]">
-                Použije se jako výchozí při vystavení nové faktury.
+                Použije se jako výchozí při vytvoření nového konceptu.
               </span>
             </label>
             <label class="sm:col-span-2">
@@ -455,6 +455,40 @@ export default define.page<typeof handler>(({ data, state, params }) => {
             Uložit nastavení
           </button>
         </form>
+
+        <section class="mt-10">
+          <div class="rounded-2xl border border-[#dce2dc] bg-white p-5 sm:flex sm:items-center sm:justify-between sm:gap-5">
+            <div>
+              <h2 class="text-lg font-semibold">Číselné řady faktur</h2>
+              <p class="mt-1 text-sm text-[#667169]">
+                Nastavte prefix a délku pořadového čísla pro každý subjekt.
+              </p>
+            </div>
+            <a
+              href={root + "/number-sequences"}
+              class="mt-4 inline-block shrink-0 text-sm font-semibold text-[#277a4c] hover:underline sm:mt-0"
+            >
+              Spravovat číselné řady →
+            </a>
+          </div>
+        </section>
+
+        <section class="mt-4">
+          <div class="rounded-2xl border border-[#dce2dc] bg-white p-5 sm:flex sm:items-center sm:justify-between sm:gap-5">
+            <div>
+              <h2 class="text-lg font-semibold">Kategorie nákladů</h2>
+              <p class="mt-1 text-sm text-[#667169]">
+                Spravujte vlastní členění přijatých dokladů a výdajů.
+              </p>
+            </div>
+            <a
+              href={root + "/expense-categories"}
+              class="mt-4 inline-block shrink-0 text-sm font-semibold text-[#277a4c] hover:underline sm:mt-0"
+            >
+              Spravovat kategorie →
+            </a>
+          </div>
+        </section>
 
         <section class="mt-10">
           <div class="flex items-center justify-between gap-4">

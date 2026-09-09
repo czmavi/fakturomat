@@ -101,6 +101,19 @@ export class PostgresOrganizationRepository implements OrganizationRepository {
         INSERT INTO organization_memberships (organization_id, user_id, role)
         VALUES (${input.id}, ${input.ownerUserId}, 'OWNER')
       `;
+      await transaction`
+        INSERT INTO invoice_number_sequences (
+          id, organization_id, name, prefix, padding, is_default
+        ) VALUES (${crypto.randomUUID()}, ${input.id}, 'Výchozí', '', 4, true)
+      `;
+      await transaction`
+        INSERT INTO expense_categories (id, organization_id, name)
+        SELECT gen_random_uuid(), ${input.id}, name
+        FROM unnest(ARRAY[
+          'Software', 'Hardware', 'Hosting', 'Reklama', 'Kancelář',
+          'Cestovné', 'Ostatní'
+        ]) AS name
+      `;
     });
 
     return {

@@ -74,12 +74,19 @@ export default define.layout(({ Component, state, url }) => {
           >
             Přehled
           </a>
-          <span
-            class="mt-1 block cursor-not-allowed rounded-xl px-4 py-3 text-sm text-white/40"
-            title="Bude doplněno v některé z dalších etap"
+          <a
+            href={root + "/invoices"}
+            aria-current={url.pathname.startsWith(root + "/invoices")
+              ? "page"
+              : undefined}
+            class={`mt-1 block rounded-xl px-4 py-3 text-sm font-semibold ${
+              url.pathname.startsWith(root + "/invoices")
+                ? "bg-white/12"
+                : "hover:bg-white/8"
+            }`}
           >
             Faktury
-          </span>
+          </a>
           <a
             href={root + "/contacts"}
             aria-current={url.pathname.startsWith(root + "/contacts")
@@ -93,14 +100,32 @@ export default define.layout(({ Component, state, url }) => {
           >
             Kontakty
           </a>
-          {["Náklady", "Banka"].map((label) => (
-            <span
-              class="mt-1 block cursor-not-allowed rounded-xl px-4 py-3 text-sm text-white/40"
-              title="Bude doplněno v některé z dalších etap"
-            >
-              {label}
-            </span>
-          ))}
+          <a
+            href={root + "/expenses"}
+            aria-current={url.pathname.startsWith(root + "/expenses")
+              ? "page"
+              : undefined}
+            class={`mt-1 block rounded-xl px-4 py-3 text-sm font-semibold ${
+              url.pathname.startsWith(root + "/expenses")
+                ? "bg-white/12"
+                : "hover:bg-white/8"
+            }`}
+          >
+            Náklady
+          </a>
+          <a
+            href={root + "/banking"}
+            aria-current={url.pathname.startsWith(root + "/banking")
+              ? "page"
+              : undefined}
+            class={`mt-1 block rounded-xl px-4 py-3 text-sm font-semibold ${
+              url.pathname.startsWith(root + "/banking")
+                ? "bg-white/12"
+                : "hover:bg-white/8"
+            }`}
+          >
+            Banka
+          </a>
           <a
             href={root + "/settings"}
             aria-current={url.pathname.startsWith(root + "/settings")

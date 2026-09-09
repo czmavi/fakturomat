@@ -122,6 +122,14 @@ export default define.page<typeof handler>(({ data, state, params }) => (
           csrfToken={state.csrfToken}
           submitLabel="Uložit účet"
         />
+        <div class="mt-6 border-t border-[#e3e7e3] pt-5">
+          <a
+            href={`/o/${params.organizationId}/settings/bank-accounts/${params.bankAccountId}/connection`}
+            class="text-sm font-semibold text-[#277a4c] hover:underline"
+          >
+            Nastavit read-only Fio API připojení →
+          </a>
+        </div>
       </section>
     </div>
   </main>

@@ -19,7 +19,8 @@ export const handler = define.handlers({
     }
     return new Response(object.data.slice().buffer, {
       headers: {
-        "Cache-Control": "private, max-age=300",
+        "Cache-Control": "private, no-store",
+        "Content-Security-Policy": "sandbox; default-src 'none'",
         "Content-Type": settings.logoMimeType,
         "X-Content-Type-Options": "nosniff",
       },

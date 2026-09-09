@@ -87,8 +87,13 @@ export function renderInvoiceTemplate(
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; script-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
   <title>Faktura ${escapeHtml(viewModel.invoice.number)}</title>
-  <style>${css}</style>
+  <style>
+    ${css}
+    html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .invoice .totals .grand-total span { color: inherit; }
+  </style>
 </head>
 <body>${rendered}</body>
 </html>`;

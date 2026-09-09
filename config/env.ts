@@ -26,3 +26,27 @@ export function getDatabaseMaxConnections(): number {
   }
   return value;
 }
+
+export function requireBankCredentialsEncryptionKey(): Uint8Array {
+  const encoded = Deno.env.get("BANK_CREDENTIALS_ENCRYPTION_KEY")?.trim();
+  if (!encoded) {
+    throw new Error(
+      "Missing required environment variable BANK_CREDENTIALS_ENCRYPTION_KEY",
+    );
+  }
+  let key: Uint8Array;
+  try {
+    key = Uint8Array.from(
+      atob(encoded),
+      (character) => character.charCodeAt(0),
+    );
+  } catch {
+    throw new Error("BANK_CREDENTIALS_ENCRYPTION_KEY must be valid base64");
+  }
+  if (key.length !== 32) {
+    throw new Error(
+      "BANK_CREDENTIALS_ENCRYPTION_KEY must decode to exactly 32 bytes",
+    );
+  }
+  return key;
+}
