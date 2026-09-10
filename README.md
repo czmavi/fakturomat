@@ -4,9 +4,9 @@ Interní webová aplikace pro správu faktur, nákladových dokladů a bankovní
 transakcí více nezávislých subjektů. Projekt používá Deno, Fresh 2, Preact,
 TypeScript v strict režimu a PostgreSQL přes `postgres.js`.
 
-Aktuálně jsou dokončené etapy 1 až 18: aplikační bootstrap, migrace, interní
-přihlášení, organizace, tenant scope, nastavení subjektu, bankovní účty a
-oddělené knihovny kontaktů. Součástí jsou také globální fakturační šablony s
+Verze v1 je dokončena včetně všech etap 1 až 20: aplikační bootstrap, migrace,
+interní přihlášení, organizace, tenant scope, nastavení subjektu, bankovní účty
+a oddělené knihovny kontaktů. Součástí jsou také globální fakturační šablony s
 neměnnými verzemi a editovatelné koncepty faktur bez DPH. Každý subjekt má
 vlastní číselné řady s bezpečným ročním čítačem. Koncept lze atomicky vystavit;
 tím získá definitivní číslo a neměnné snapshoty fakturačních údajů. Vystavená
@@ -60,9 +60,10 @@ deno task build
 deno task start
 ```
 
-Migrace spouštějte před startem každé nové verze samostatným příkazem
-`deno task db:migrate`. Migrační runner používá PostgreSQL advisory lock, takže
-je bezpečný i při souběžném spuštění více instancí.
+Migrace spouštějte před startem každé nové verze samostatným příkazem. Migrační
+runner používá PostgreSQL advisory lock, takže je bezpečný i při souběžném
+spuštění více instancí. Produkční konfigurace, pořadí releasu, reverzní proxy,
+zálohy, obnovu a smoke test popisuje [DEPLOYMENT.md](DEPLOYMENT.md).
 
 ## Proměnné prostředí
 
@@ -89,6 +90,14 @@ deno task check
 deno task test
 deno task build
 ```
+
+Databázové integrační testy spusťte proti samostatné databázi:
+
+```sh
+TEST_DATABASE_URL=postgres://fakturomat:fakturomat@127.0.0.1:55433/fakturomat deno task test
+```
+
+Testovací URL nikdy nesmí odkazovat na produkční databázi.
 
 `check` spouští formatter check, lint a type check. Integrační testy ověřují
 přihlášení, revokaci session, izolaci organizací, celý lifecycle kontaktu a
@@ -121,7 +130,12 @@ odmítnutí uživatele bez membership. Samostatné testy pokrývají kalendářn
 hranice všech přednastavených i vlastních období. Bezpečnostní regresní testy
 ověřují CSP a ostatní hlavičky, produkční HSTS, zachování přísnější politiky
 downloadů, limit deklarované velikosti požadavku, CSS escape varianty a
-databázové odmítnutí změn či přealokovaných plateb.
+databázové odmítnutí změn či přealokovaných plateb. HTTP integrační scénář navíc
+prochází skutečné Fresh middleware a formulářové handlery: ověřuje origin i
+double-submit CSRF, bezpečné session cookies a jejich revokaci, limit požadavku,
+tenantovou odpověď 404 pro čtení i změnu a kompletní tok přijaté faktury od
+kontaktu a dvou DPH řádků přes PDF přílohu až po ruční spárování odchozí
+bankovní transakce.
 
 ## Architektura
 
@@ -133,6 +147,15 @@ databázové odmítnutí změn či přealokovaných plateb.
 - `database/` – PostgreSQL klient a migrační runner;
 - `migrations/` – neměnné, verzované SQL migrace;
 - `scripts/` – provozní CLI příkazy.
+
+## Dokumentace
+
+- [DEPLOYMENT.md](DEPLOYMENT.md) – produkční konfigurace, release postup,
+  reverzní proxy, zálohy, obnova, monitoring a bezpečnostní checklist;
+- [SECURITY.md](SECURITY.md) – hranice důvěry, implementované kontroly a
+  zbytková rizika;
+- [BACKLOG.md](BACKLOG.md) – samostatně prioritizované kandidáty pro v2 a trvalé
+  produktové non-goals.
 
 Hesla jsou ukládána pomocí PBKDF2-HMAC-SHA-256 s náhodnou solí a 600 000
 iteracemi. V databázi se ukládá pouze SHA-256 hash náhodného session tokenu.
@@ -280,7 +303,7 @@ požadavků na TLS, rate limiting a maximální velikost těla na reverzní prox
   a verzí šablon, zákaz nulových pohybů a databázová validace platebních
   alokací.
 
-## Známá omezení etap 1–18
+## Známá omezení v1
 
 - Zatím není UI pro změnu nebo obnovu hesla; uživatel se zakládá přes CLI.
 - Není implementováno omezení počtu chybných přihlášení ani externí identity
@@ -300,8 +323,6 @@ požadavků na TLS, rate limiting a maximální velikost těla na reverzní prox
 
 ## Backlog pro v2
 
-- volitelné vícefaktorové přihlášení;
-- audit přihlášení a správa aktivních sessions;
-- bezpečné obnovení hesla;
-- rate limiting sdílený mezi více instancemi;
-- externí SSO/OIDC pro případ budoucího rozšíření mimo interní provoz.
+Prioritizovaný seznam provozních, bezpečnostních a produktových pokračování je v
+[BACKLOG.md](BACKLOG.md). Účetnictví, daňová podání, sklad a platební příkazy
+zůstávají mimo zamýšlený produkt.
