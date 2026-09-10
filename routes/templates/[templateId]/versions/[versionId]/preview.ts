@@ -9,10 +9,15 @@ export const handler = define.handlers({
     if (!isUuid(ctx.params.templateId) || !isUuid(ctx.params.versionId)) {
       return new Response("Stránka nebyla nalezena.", { status: 404 });
     }
-    const version = await new PostgresInvoiceTemplateRepository().findVersion(
-      ctx.params.templateId,
-      ctx.params.versionId,
-    );
+    const version = await new PostgresInvoiceTemplateRepository()
+      .findVersionForUser(
+        ctx.params.templateId,
+        ctx.params.versionId,
+        {
+          organizationId: ctx.state.currentOrganization!.id,
+          userId: ctx.state.user!.id,
+        },
+      );
     if (version === null) {
       return new Response("Verze nebyla nalezena.", { status: 404 });
     }

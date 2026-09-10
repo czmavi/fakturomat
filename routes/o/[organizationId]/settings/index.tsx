@@ -82,7 +82,10 @@ export const handler = define.handlers<SettingsPageData>({
     const [settings, bankAccounts, templates] = await Promise.all([
       settingsRepository.findForUser(organizationId, user.id),
       new PostgresBankAccountRepository().listForUser(organizationId, user.id),
-      new PostgresInvoiceTemplateRepository().list(),
+      new PostgresInvoiceTemplateRepository().listForUser({
+        organizationId,
+        userId: user.id,
+      }),
     ]);
     if (settings === null) {
       return new Response("Stránka nebyla nalezena.", { status: 404 });
@@ -110,7 +113,10 @@ export const handler = define.handlers<SettingsPageData>({
           organizationId,
           user.id,
         ),
-        new PostgresInvoiceTemplateRepository().list(),
+        new PostgresInvoiceTemplateRepository().listForUser({
+          organizationId,
+          userId: user.id,
+        }),
       ]);
       return page({
         values,

@@ -484,6 +484,10 @@ export class PostgresInvoiceRepository implements InvoiceRepository {
           AND versions.invoice_template_id = templates.id
         WHERE templates.id = ${draft.invoice_template_id}
           AND templates.is_active
+          AND (
+            templates.organization_id IS NULL
+            OR templates.organization_id = ${input.organizationId}
+          )
         FOR SHARE OF templates, versions
       `;
         const lockedItems = await transaction<{ id: string }[]>`
@@ -660,6 +664,10 @@ export class PostgresInvoiceRepository implements InvoiceRepository {
         AND EXISTS (
           SELECT 1 FROM invoice_templates
           WHERE id = ${input.invoiceTemplateId}
+            AND (
+              organization_id IS NULL
+              OR organization_id = ${input.organizationId}
+            )
             AND (${!activeOnly} OR is_active)
         )
         AND (

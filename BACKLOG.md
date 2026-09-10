@@ -16,8 +16,8 @@ rozsah a bezpečnostní dopady.
 - **MFA:** alespoň TOTP s recovery kódy a potvrzením citlivých změn.
 - **Auditní log:** přihlášení, změny membership, nastavení subjektu, vystavení a
   zrušení faktury, změny bankovního připojení, synchronizace a párování.
-- **Role pro globální šablony:** změnu šablon omezit na instalačního
-  administrátora; dnes je může spravovat každý přihlášený uživatel.
+- **Správa globálních šablon:** přidat instalační administrátorské workflow;
+  dnes jsou globální předlohy neměnné a aktualizují se pouze migrací.
 - **Health/readiness endpointy a strukturované logy:** zvlášť dostupnost
   procesu, databáze, storage a Chromium bez zveřejnění citlivých detailů.
 

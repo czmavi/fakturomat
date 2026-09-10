@@ -168,7 +168,10 @@ export class OrganizationSettingsService {
     private readonly repository: OrganizationSettingsRepository,
     private readonly storage: ObjectStorage,
     private readonly templateRepository: {
-      find(templateId: string): Promise<InvoiceTemplate | null>;
+      findForUser(
+        templateId: string,
+        scope: { organizationId: string; userId: string },
+      ): Promise<InvoiceTemplate | null>;
     },
   ) {}
 
@@ -186,8 +189,9 @@ export class OrganizationSettingsService {
     if (current === null) return false;
 
     const settings = normalizeSettings(current, input.values);
-    const template = await this.templateRepository.find(
+    const template = await this.templateRepository.findForUser(
       input.values.defaultInvoiceTemplateId,
+      { organizationId: input.organizationId, userId: input.userId },
     );
     if (template === null || !template.isActive) {
       throw new OrganizationSettingsValidationError(

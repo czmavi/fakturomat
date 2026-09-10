@@ -6,24 +6,24 @@ TypeScript v strict režimu a PostgreSQL přes `postgres.js`.
 
 Verze v1 je dokončena včetně všech etap 1 až 20: aplikační bootstrap, migrace,
 interní přihlášení, organizace, tenant scope, nastavení subjektu, bankovní účty
-a oddělené knihovny kontaktů. Součástí jsou také globální fakturační šablony s
-neměnnými verzemi a editovatelné koncepty faktur bez DPH. Každý subjekt má
-vlastní číselné řady s bezpečným ročním čítačem. Koncept lze atomicky vystavit;
-tím získá definitivní číslo a neměnné snapshoty fakturačních údajů. Vystavená
-faktura obsahuje lokálně generovanou QR Platbu ve formátu SPAYD a neměnné PDF.
-Základní evidence nákladů podporuje přijaté faktury, účtenky a ostatní výdaje,
-vlastní kategorie a filtrování. Doklady mohou mít libovolný počet evidenčních
-řádků DPH s ručně zadanou desetinnou sazbou, základem a částkou daně. K nákladu
-lze nahrát, zobrazit, stáhnout a odstranit PDF, JPEG nebo PNG přílohy. K
-bankovnímu účtu lze bezpečně uložit read-only Fio API token; aplikace má obecné
-provider rozhraní a klienta pro načtení pohybů z Fio API. Bankovní sekce
-podporuje ruční synchronizaci zvoleného období, idempotentní uložení transakcí,
-aktuální známý zůstatek a filtrování pohybů. Příchozí platby se při jednoznačné
-shodě automaticky párují s fakturami; nejednoznačné případy lze přiřadit ručně
-nebo již vytvořené párování zrušit. Odchozí pohyby lze ručně alokovat na
-náklady; aplikace hlídá měnu a nepřekročí zbývající částku pohybu ani dokladu.
-Organizační dashboard zobrazuje zůstatky připojených účtů, vydané a neuhrazené
-faktury, faktury po splatnosti, příjmy, evidované náklady, cashflow a
+a oddělené knihovny kontaktů. Součástí jsou také neměnné globální fakturační
+šablony s izolovanými kopiemi subjektů a editovatelné koncepty faktur bez DPH.
+Každý subjekt má vlastní číselné řady s bezpečným ročním čítačem. Koncept lze
+atomicky vystavit; tím získá definitivní číslo a neměnné snapshoty fakturačních
+údajů. Vystavená faktura obsahuje lokálně generovanou QR Platbu ve formátu SPAYD
+a neměnné PDF. Základní evidence nákladů podporuje přijaté faktury, účtenky a
+ostatní výdaje, vlastní kategorie a filtrování. Doklady mohou mít libovolný
+počet evidenčních řádků DPH s ručně zadanou desetinnou sazbou, základem a
+částkou daně. K nákladu lze nahrát, zobrazit, stáhnout a odstranit PDF, JPEG
+nebo PNG přílohy. K bankovnímu účtu lze bezpečně uložit read-only Fio API token;
+aplikace má obecné provider rozhraní a klienta pro načtení pohybů z Fio API.
+Bankovní sekce podporuje ruční synchronizaci zvoleného období, idempotentní
+uložení transakcí, aktuální známý zůstatek a filtrování pohybů. Příchozí platby
+se při jednoznačné shodě automaticky párují s fakturami; nejednoznačné případy
+lze přiřadit ručně nebo již vytvořené párování zrušit. Odchozí pohyby lze ručně
+alokovat na náklady; aplikace hlídá měnu a nepřekročí zbývající částku pohybu
+ani dokladu. Organizační dashboard zobrazuje zůstatky připojených účtů, vydané a
+neuhrazené faktury, faktury po splatnosti, příjmy, evidované náklady, cashflow a
 nespárované bankovní pohyby. Přehled lze filtrovat na tento či minulý měsíc,
 aktuální rok nebo vlastní období. Bezpečnostní audit navíc zpevnil HTTP hlavičky
 a privátní caching, sandbox šablon, limity požadavků a databázovou integritu
@@ -171,11 +171,12 @@ MIME typ. Lokální implementace zapisuje soubory atomicky, odmítá traversal k
 upload přijímá pouze PNG, JPEG nebo WebP do velikosti 2 MB s kontrolou signatury
 souboru.
 
-Fakturační šablony jsou globální. Každá úprava vytvoří novou verzi a již uložený
-HTML/CSS obsah se přes aplikační rozhraní nemění. Renderer povoluje jen známé
+Výchozí fakturační šablony jsou globální a pouze pro čtení. První úprava vytvoří
+vlastní kopii pro aktivní subjekt a každé další uložení její novou neměnnou
+verzi. Kopie nejsou dostupné jiným subjektům. Renderer povoluje jen známé
 placeholdery, hodnoty escapuje a validátor odmítá aktivní prvky, JavaScript i
-externí zdroje. Náhled běží v sandboxovaném iframe a je dostupný jen přihlášeným
-uživatelům.
+externí zdroje. Náhled běží v sandboxovaném iframe a je dostupný jen členům
+příslušného subjektu.
 
 Koncept faktury drží živé reference na kontakt, bankovní účet, číselnou řadu a
 šablonu. Dokud je ve stavu `DRAFT`, lze měnit jeho hlavičku i položky. Částky se
@@ -302,6 +303,9 @@ požadavků na TLS, rate limiting a maximální velikost těla na reverzní prox
 - `0016_security_integrity_hardening.sql` – neměnnost bankovních pohybů, příloh
   a verzí šablon, zákaz nulových pohybů a databázová validace platebních
   alokací.
+- `0017_organization_invoice_templates.sql` – tenantové kopie fakturačních
+  šablon, izolace mezi subjekty a databázová ochrana globálních předloh proti
+  změně.
 
 ## Známá omezení v1
 
@@ -310,8 +314,8 @@ požadavků na TLS, rate limiting a maximální velikost těla na reverzní prox
   provider.
 - Auth integrační test vyžaduje explicitní `TEST_DATABASE_URL`.
 - Pozvání dalších uživatelů a správa memberships zatím nemají UI.
-- Globální šablony může zatím spravovat každý přihlášený uživatel; jemnější
-  administrátorské role nejsou součástí dosavadních etap.
+- Správa instalační knihovny globálních šablon nemá UI; subjekty upravují pouze
+  své vlastní kopie.
 - Faktury vystavené před nasazením migrace `0008` se automaticky zpětně
   nerenderují; nově vystavené faktury už PDF dostanou vždy.
 - Dashboard pracuje s nominálními částkami po jednotlivých měnách; neprovádí

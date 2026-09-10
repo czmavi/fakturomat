@@ -71,7 +71,8 @@ aplikace; není určený k veřejné registraci ani jako účetní systém.
   pokusů a současně nastavit absolutní limit těla i pro chunked přenos.
 - Chybí vícefaktorové přihlášení, obnova hesla, správa aktivních sessions a
   bezpečnostní audit log.
-- Globální šablony může spravovat každý přihlášený uživatel.
+- Globální šablony jsou databázově neměnné; změna uživatele vytvoří tenantovou
+  kopii viditelnou pouze členům příslušného subjektu.
 - Uploady nemají antivirovou kontrolu ani sandbox analýzu obsahu.
 - Lokální object storage spoléhá na oprávnění a šifrování hostitelského disku;
   produkční zálohy a alternativní storage musí zajistit provozovatel.

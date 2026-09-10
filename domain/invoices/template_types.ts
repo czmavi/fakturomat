@@ -29,6 +29,8 @@ export type TemplatePlaceholder = typeof TEMPLATE_PLACEHOLDERS[number];
 
 export interface InvoiceTemplate {
   id: string;
+  organizationId: string | null;
+  sourceTemplateId: string | null;
   name: string;
   description: string | null;
   isActive: boolean;

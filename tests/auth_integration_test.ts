@@ -1324,7 +1324,7 @@ Deno.test({
 });
 
 Deno.test({
-  name: "invoice template integration: immutable concurrency-safe versions",
+  name: "invoice template integration: organizations edit isolated copies",
   ignore: testDatabaseUrl === undefined,
   sanitizeOps: false,
   sanitizeResources: false,
@@ -1336,8 +1336,11 @@ Deno.test({
     const authRepository = new PostgresAuthRepository(sql);
     const repository = new PostgresInvoiceTemplateRepository(sql);
     const service = new InvoiceTemplateService(repository);
+    const organizationRepository = new PostgresOrganizationRepository(sql);
     const userId = crypto.randomUUID();
-    let templateId: string | null = null;
+    const firstOrganizationId = crypto.randomUUID();
+    const secondOrganizationId = crypto.randomUUID();
+    const copyIds: string[] = [];
 
     try {
       await authRepository.createUser({
@@ -1346,61 +1349,128 @@ Deno.test({
         displayName: "Template editor",
         passwordHash: await hashPassword("integration-password", 10_000),
       });
-
-      const defaults = await repository.list();
-      assert(
-        defaults.some((template) => template.name === "Čistá profesionální"),
-        "default invoice template was not seeded",
-      );
-
-      const template = await service.create({
-        userId,
-        name: "Integration template",
-        description: "Version test",
-        html: "<h1>{{invoice.number}}</h1><table>{{invoice.items}}</table>",
-        css: "body { color: #18211c; }",
+      await organizationRepository.createWithOwner({
+        id: firstOrganizationId,
+        type: "SRO",
+        officialName: "První subjekt s.r.o.",
+        displayName: "První subjekt",
+        ownerUserId: userId,
       });
-      templateId = template.id;
-      const original = await repository.findVersion(
-        template.id,
-        template.currentVersionId,
+      await organizationRepository.createWithOwner({
+        id: secondOrganizationId,
+        type: "SRO",
+        officialName: "Druhý subjekt s.r.o.",
+        displayName: "Druhý subjekt",
+        ownerUserId: userId,
+      });
+
+      const firstScope = { organizationId: firstOrganizationId, userId };
+      const secondScope = { organizationId: secondOrganizationId, userId };
+      const globalTemplate = (await repository.listForUser(firstScope)).find(
+        (template) => template.organizationId === null,
       );
-      assert(original?.version === 1, "initial template version is missing");
+      assert(globalTemplate !== undefined, "global template was not seeded");
+      const original = await repository.findVersionForUser(
+        globalTemplate.id,
+        globalTemplate.currentVersionId,
+        firstScope,
+      );
+      assert(original !== null, "global template version is missing");
+
+      const firstEdit = await service.createVersion({
+        ...firstScope,
+        templateId: globalTemplate.id,
+        name: "Kopie prvního subjektu",
+        description: "První izolovaná kopie",
+        html: "<h1>První {{invoice.number}}</h1>",
+        css: "body { color: #111; }",
+      });
+      const secondEdit = await service.createVersion({
+        ...secondScope,
+        templateId: globalTemplate.id,
+        name: "Kopie druhého subjektu",
+        description: "Druhá izolovaná kopie",
+        html: "<h1>Druhý {{invoice.number}}</h1>",
+        css: "body { color: #222; }",
+      });
+      assert(
+        firstEdit !== null && secondEdit !== null,
+        "copies were not created",
+      );
+      assert(
+        firstEdit.invoiceTemplateId !== globalTemplate.id &&
+          secondEdit.invoiceTemplateId !== globalTemplate.id &&
+          firstEdit.invoiceTemplateId !== secondEdit.invoiceTemplateId,
+        "organizations did not receive distinct copies",
+      );
+      copyIds.push(firstEdit.invoiceTemplateId, secondEdit.invoiceTemplateId);
 
       await Promise.all(
         Array.from({ length: 4 }, (_, index) =>
           service.createVersion({
-            templateId: template.id,
-            userId,
-            name: "Integration template",
-            description: `Concurrent version ${index + 2}`,
-            html: `<h1>{{invoice.number}}</h1><p>Version ${index + 2}</p>`,
-            css: "body { color: #18211c; }",
+            ...firstScope,
+            templateId: firstEdit.invoiceTemplateId,
+            name: "Kopie prvního subjektu",
+            description: `Souběžná verze ${index + 3}`,
+            html: `<h1>První {{invoice.number}}</h1><p>${index}</p>`,
+            css: "body { color: #111; }",
           })),
       );
+      const firstVersions = await repository.listVersionsForUser(
+        firstEdit.invoiceTemplateId,
+        firstScope,
+      );
+      assert(
+        firstVersions.length === 6 &&
+          new Set(firstVersions.map((version) => version.version)).size === 6,
+        "concurrent organization copy edits lost or duplicated a version",
+      );
 
-      const versions = await repository.listVersions(template.id);
+      const defaults = await sql<
+        Array<{ id: string; default_invoice_template_id: string }>
+      >`
+        SELECT id, default_invoice_template_id
+        FROM organizations
+        WHERE id IN (${firstOrganizationId}, ${secondOrganizationId})
+      `;
       assert(
-        versions.length === 5,
-        "concurrent version creation lost a version",
+        defaults.find((item) => item.id === firstOrganizationId)
+              ?.default_invoice_template_id === firstEdit.invoiceTemplateId &&
+          defaults.find((item) => item.id === secondOrganizationId)
+              ?.default_invoice_template_id === secondEdit.invoiceTemplateId,
+        "an edited global template was not replaced by the organization's copy",
+      );
+
+      const unchangedGlobal = await repository.findForUser(
+        globalTemplate.id,
+        firstScope,
+      );
+      const unchangedOriginal = await repository.findVersionForUser(
+        globalTemplate.id,
+        globalTemplate.currentVersionId,
+        firstScope,
       );
       assert(
-        new Set(versions.map((version) => version.version)).size === 5,
-        "concurrent version creation produced duplicate numbers",
-      );
-      const unchangedOriginal = await repository.findVersion(
-        template.id,
-        template.currentVersionId,
+        unchangedGlobal?.currentVersionId === globalTemplate.currentVersionId &&
+          unchangedGlobal.name === globalTemplate.name &&
+          unchangedOriginal?.html === original.html &&
+          unchangedOriginal.css === original.css,
+        "editing an organization copy changed the global template",
       );
       assert(
-        unchangedOriginal?.html === original.html,
-        "creating a version mutated historical template content",
+        await repository.findForUser(
+          firstEdit.invoiceTemplateId,
+          secondScope,
+        ) ===
+          null,
+        "another organization can read the first organization's copy",
       );
+
       let templateMutationBlocked = false;
       try {
         await sql`
-          UPDATE invoice_template_versions SET html = '<p>changed</p>'
-          WHERE id = ${template.currentVersionId}
+          UPDATE invoice_templates SET name = 'Changed global'
+          WHERE id = ${globalTemplate.id}
         `;
       } catch (error) {
         templateMutationBlocked = typeof error === "object" &&
@@ -1408,14 +1478,48 @@ Deno.test({
       }
       assert(
         templateMutationBlocked,
-        "database allowed historical template version mutation",
+        "database allowed global template mutation",
+      );
+
+      let globalVersionInsertBlocked = false;
+      try {
+        await sql`
+          INSERT INTO invoice_template_versions (
+            id, invoice_template_id, version, html, css, created_by
+          ) VALUES (
+            ${crypto.randomUUID()}, ${globalTemplate.id}, 2,
+            '<p>Changed global</p>', '', ${userId}
+          )
+        `;
+      } catch (error) {
+        globalVersionInsertBlocked = typeof error === "object" &&
+          error !== null && "code" in error && error.code === "55000";
+      }
+      assert(
+        globalVersionInsertBlocked,
+        "database allowed a new version on the global template",
       );
     } finally {
-      if (templateId !== null) {
-        await sql`UPDATE invoice_templates SET current_version_id = NULL WHERE id = ${templateId}`;
-        await sql`DELETE FROM invoice_template_versions WHERE invoice_template_id = ${templateId}`;
-        await sql`DELETE FROM invoice_templates WHERE id = ${templateId}`;
+      await sql`
+        UPDATE organizations
+        SET default_invoice_template_id = '10000000-0000-4000-8000-000000000001'
+        WHERE id IN (${firstOrganizationId}, ${secondOrganizationId})
+      `;
+      for (const copyId of copyIds) {
+        await sql`
+          UPDATE invoice_templates SET current_version_id = NULL
+          WHERE id = ${copyId}
+        `;
+        await sql`
+          DELETE FROM invoice_template_versions
+          WHERE invoice_template_id = ${copyId}
+        `;
+        await sql`DELETE FROM invoice_templates WHERE id = ${copyId}`;
       }
+      await sql`
+        DELETE FROM organizations
+        WHERE id IN (${firstOrganizationId}, ${secondOrganizationId})
+      `;
       await sql`DELETE FROM users WHERE id = ${userId}`;
       await closeDb();
     }
@@ -1517,7 +1621,8 @@ Deno.test({
         sequences.length === 1 && sequences[0].isDefault,
         "new organization did not receive a default number sequence",
       );
-      const templates = await new PostgresInvoiceTemplateRepository(sql).list();
+      const templates = await new PostgresInvoiceTemplateRepository(sql)
+        .listForUser({ organizationId, userId: ownerId });
       const draftInput = {
         organizationId,
         userId: ownerId,
@@ -1739,12 +1844,14 @@ Deno.test({
       });
       assert(bankAccount !== null, "bank account could not be created");
       const template = await templateService.create({
+        organizationId,
         userId: ownerId,
         name: "Snapshot integration template",
         description: "Snapshot test",
         html: "<h1>{{invoice.number}}</h1><table>{{invoice.items}}</table>",
         css: "body { color: #18211c; }",
       });
+      assert(template !== null, "template could not be created");
       templateId = template.id;
       const sequence = (await sequenceRepository.listForUser(
         organizationId,
@@ -2204,6 +2311,7 @@ Deno.test({
       });
       await templateService.createVersion({
         templateId: template.id,
+        organizationId,
         userId: ownerId,
         name: template.name,
         description: "Changed after issue",

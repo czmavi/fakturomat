@@ -56,9 +56,11 @@ const INPUT: OrganizationSettingsInput = {
 };
 
 const TEMPLATE_LOOKUP = {
-  find: (templateId: string) =>
+  findForUser: (templateId: string) =>
     Promise.resolve({
       id: templateId,
+      organizationId: null,
+      sourceTemplateId: null,
       name: "Default",
       description: null,
       isActive: true,

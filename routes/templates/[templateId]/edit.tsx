@@ -24,13 +24,18 @@ export const handler = define.handlers<PageData>({
       return new Response("Stránka nebyla nalezena.", { status: 404 });
     }
     const repository = new PostgresInvoiceTemplateRepository();
-    const template = await repository.find(ctx.params.templateId);
+    const scope = {
+      organizationId: ctx.state.currentOrganization!.id,
+      userId: ctx.state.user!.id,
+    };
+    const template = await repository.findForUser(ctx.params.templateId, scope);
     if (template === null) {
       return new Response("Stránka nebyla nalezena.", { status: 404 });
     }
-    const version = await repository.findVersion(
+    const version = await repository.findVersionForUser(
       template.id,
       template.currentVersionId,
+      scope,
     );
     if (version === null) {
       return new Response("Verze nebyla nalezena.", { status: 404 });
@@ -63,12 +68,18 @@ export const handler = define.handlers<PageData>({
       ).createVersion({
         ...values,
         templateId: ctx.params.templateId,
+        organizationId: ctx.state.currentOrganization!.id,
         userId: ctx.state.user!.id,
       });
       if (version === null) {
         return new Response("Stránka nebyla nalezena.", { status: 404 });
       }
-      return ctx.redirect(`/templates/${ctx.params.templateId}`, 303);
+      return ctx.redirect(
+        `/templates/${version.invoiceTemplateId}?organizationId=${
+          ctx.state.currentOrganization!.id
+        }`,
+        303,
+      );
     } catch (error) {
       if (error instanceof InvoiceTemplateValidationError) {
         return page({ values, error: error.message }, { status: 422 });
@@ -85,13 +96,18 @@ export default define.page<typeof handler>(({ data, state, params }) => (
     </Head>
     <div class="mx-auto max-w-5xl">
       <a
-        href={`/templates/${params.templateId}`}
+        href={`/templates/${params.templateId}?organizationId=${
+          state.currentOrganization!.id
+        }`}
         class="text-sm font-semibold text-[#277a4c] hover:underline"
       >
         ← Zpět na šablonu
       </a>
       <section class="mt-5 rounded-2xl border border-[#dce2dc] bg-white p-6 sm:p-8">
-        <p class="text-sm font-semibold text-[#277a4c]">Neměnná historie</p>
+        <p class="text-sm font-semibold text-[#277a4c]">
+          Neměnná historie · změny jen pro{" "}
+          {state.currentOrganization!.displayName}
+        </p>
         <h1 class="mt-2 text-3xl font-semibold tracking-tight">
           Nová verze šablony
         </h1>

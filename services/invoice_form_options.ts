@@ -29,7 +29,10 @@ export async function loadInvoiceFormOptions(
         userId,
       ),
       new PostgresBankAccountRepository().listForUser(organizationId, userId),
-      new PostgresInvoiceTemplateRepository().list(),
+      new PostgresInvoiceTemplateRepository().listForUser({
+        organizationId,
+        userId,
+      }),
     ]);
   return {
     contacts: contacts.filter((item) =>

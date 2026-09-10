@@ -34,8 +34,20 @@ export const handler = define.handlers<PageData>({
     try {
       const template = await new InvoiceTemplateService(
         new PostgresInvoiceTemplateRepository(),
-      ).create({ ...values, userId: ctx.state.user!.id });
-      return ctx.redirect(`/templates/${template.id}`, 303);
+      ).create({
+        ...values,
+        organizationId: ctx.state.currentOrganization!.id,
+        userId: ctx.state.user!.id,
+      });
+      if (template === null) {
+        return new Response("Stránka nebyla nalezena.", { status: 404 });
+      }
+      return ctx.redirect(
+        `/templates/${template.id}?organizationId=${
+          ctx.state.currentOrganization!.id
+        }`,
+        303,
+      );
     } catch (error) {
       if (error instanceof InvoiceTemplateValidationError) {
         return page({ values, error: error.message }, { status: 422 });
@@ -52,13 +64,13 @@ export default define.page<typeof handler>(({ data, state }) => (
     </Head>
     <div class="mx-auto max-w-5xl">
       <a
-        href="/templates"
+        href={`/templates?organizationId=${state.currentOrganization!.id}`}
         class="text-sm font-semibold text-[#277a4c] hover:underline"
       >
         ← Zpět na šablony
       </a>
       <section class="mt-5 rounded-2xl border border-[#dce2dc] bg-white p-6 sm:p-8">
-        <p class="text-sm font-semibold text-[#277a4c]">Globální knihovna</p>
+        <p class="text-sm font-semibold text-[#277a4c]">Vlastní šablona</p>
         <h1 class="mt-2 text-3xl font-semibold tracking-tight">Nová šablona</h1>
         <InvoiceTemplateForm
           values={data.values}

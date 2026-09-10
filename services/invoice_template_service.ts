@@ -124,13 +124,15 @@ export class InvoiceTemplateService {
   constructor(private readonly repository: InvoiceTemplateRepository) {}
 
   async create(
-    input: InvoiceTemplateInput & { userId: string },
-  ): Promise<InvoiceTemplate> {
+    input: InvoiceTemplateInput & { organizationId: string; userId: string },
+  ): Promise<InvoiceTemplate | null> {
     const validated = validateInvoiceTemplate(input);
     return await this.repository.create({
       ...validated,
       id: crypto.randomUUID(),
       versionId: crypto.randomUUID(),
+      organizationId: input.organizationId,
+      userId: input.userId,
       createdBy: input.userId,
     });
   }
@@ -138,6 +140,7 @@ export class InvoiceTemplateService {
   async createVersion(
     input: InvoiceTemplateInput & {
       templateId: string;
+      organizationId: string;
       userId: string;
     },
   ): Promise<InvoiceTemplateVersion | null> {
@@ -145,6 +148,10 @@ export class InvoiceTemplateService {
     return await this.repository.createVersion({
       ...validated,
       templateId: input.templateId,
+      organizationId: input.organizationId,
+      userId: input.userId,
+      copyTemplateId: crypto.randomUUID(),
+      copyBaseVersionId: crypto.randomUUID(),
       versionId: crypto.randomUUID(),
       createdBy: input.userId,
     });

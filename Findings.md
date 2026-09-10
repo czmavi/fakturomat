@@ -3,30 +3,32 @@
 Datum auditu: 10. září 2026\
 Auditovaná revize: `4a1bce2` plus lokální necommitnuté změny přítomné v
 pracovním stromu\
+Aktualizace nápravy: F-01 napraveno v lokálních změnách dne 10. září 2026\
 Rozsah: aplikační kód, routy, repository vrstva, migrace, konfigurace, uploady,
 generování PDF, autentizace, autorizace a uzamčené závislosti
 
 ## Shrnutí
 
-Audit nalezl 2 nálezy s vysokou, 4 se střední a 3 s nízkou severitou. Kritický
-nález nebyl identifikován.
+Původní audit nalezl 2 nálezy s vysokou, 4 se střední a 3 s nízkou severitou.
+Kritický nález nebyl identifikován. F-01 byl následně napraven; otevřený zůstává
+1 nález s vysokou severitou.
 
-| ID   | Nález                                                                                     | Severita | Obtížnost nápravy |
-| ---- | ----------------------------------------------------------------------------------------- | -------: | ----------------: |
-| F-01 | Libovolný přihlášený uživatel může změnit globální fakturační šablonu pro všechny tenanty |   Vysoká |           Střední |
-| F-02 | Limit těla požadavku lze obejít chybějícím `Content-Length`                               |   Vysoká |           Střední |
-| F-03 | Přihlášení nemá aplikační throttling a heslo nemá horní limit délky                       |  Střední |           Střední |
-| F-04 | Role `OWNER` a `MEMBER` nejsou vynucovány u citlivých operací                             |  Střední |            Vysoká |
-| F-05 | Produkční proces je spouštěn s neomezenými Deno oprávněními `-A`                          |  Střední |           Střední |
-| F-06 | Bezpečné cookies a HSTS se při chybné konfiguraci vypnou „fail-open“                      |  Střední |             Nízká |
-| F-07 | Uploady ověřují pouze deklarovaný MIME typ a několik úvodních bajtů                       |    Nízká |           Střední |
-| F-08 | HTML šablony jsou filtrovány regulárními výrazy, které neodpovídají parseru prohlížeče    |    Nízká |           Střední |
-| F-09 | Chybí bezpečnostní auditní stopa citlivých akcí                                           |    Nízká |           Střední |
+| ID   | Nález                                                                                  | Severita | Obtížnost nápravy |
+| ---- | -------------------------------------------------------------------------------------- | -------: | ----------------: |
+| F-01 | **Napraveno:** uživatel mohl změnit globální fakturační šablonu pro všechny tenanty    |   Vysoká |           Střední |
+| F-02 | Limit těla požadavku lze obejít chybějícím `Content-Length`                            |   Vysoká |           Střední |
+| F-03 | Přihlášení nemá aplikační throttling a heslo nemá horní limit délky                    |  Střední |           Střední |
+| F-04 | Role `OWNER` a `MEMBER` nejsou vynucovány u citlivých operací                          |  Střední |            Vysoká |
+| F-05 | Produkční proces je spouštěn s neomezenými Deno oprávněními `-A`                       |  Střední |           Střední |
+| F-06 | Bezpečné cookies a HSTS se při chybné konfiguraci vypnou „fail-open“                   |  Střední |             Nízká |
+| F-07 | Uploady ověřují pouze deklarovaný MIME typ a několik úvodních bajtů                    |    Nízká |           Střední |
+| F-08 | HTML šablony jsou filtrovány regulárními výrazy, které neodpovídají parseru prohlížeče |    Nízká |           Střední |
+| F-09 | Chybí bezpečnostní auditní stopa citlivých akcí                                        |    Nízká |           Střední |
 
-Nejvyšší prioritu má F-01: útočník s jakýmkoli platným účtem může do sdílené
-šablony vložit vlastní statické platební instrukce. Faktura jiného subjektu pak
-při vystavení načte právě aktuální globální verzi šablony. Výsledkem může být
-věrohodné PDF s podvrženým účtem. F-02 umožňuje neautentizovaný útok na
+F-01 původně umožňoval útočníkovi s jakýmkoli platným účtem změnit sdílenou
+šablonu a ovlivnit nově vystavené faktury jiných subjektů. Náprava oddělila
+neměnné globální předlohy od tenantových kopií a tento tok uzavřela. Nejvyšší
+prioritu z otevřených nálezů má F-02, který umožňuje neautentizovaný útok na
 dostupnost, pokud absolutní limit nezajistí reverzní proxy.
 
 ## Metodika a omezení
@@ -52,35 +54,30 @@ uzamčené verze; není důkazem absence dosud neznámých chyb.
 
 ## Detailní nálezy
 
-### F-01: Libovolný přihlášený uživatel může změnit globální fakturační šablonu pro všechny tenanty
+### F-01: Uživatel mohl změnit globální fakturační šablonu pro všechny tenanty
 
 **Severita:** Vysoká\
 **Obtížnost nápravy:** Střední\
-**Kategorie:** CWE-862 – Missing Authorization / porušení tenantové integrity
+**Kategorie:** CWE-862 – Missing Authorization / porušení tenantové integrity\
+**Stav:** Napraveno 10. září 2026
 
-#### Vysvětlení
+#### Původní stav
 
-Middleware šablon kontroluje pouze to, zda je uživatel přihlášen
-(`routes/templates/_middleware.ts:3-5`). Vytvoření šablony i nové verze používá
-bez dalšího autorizačního rozhodnutí `ctx.state.user!.id`
-(`routes/templates/new.tsx:25-38`,
-`routes/templates/[templateId]/edit.tsx:48-71`). Repository je globální a při
-vytvoření nové verze přepne `current_version_id` sdílené šablony
-(`repositories/invoice_template_repository.ts:177-220`).
+V auditované revizi middleware šablon kontroloval pouze přihlášení. Vytvoření
+nové verze nemělo tenantové autorizační rozhodnutí a repository přepínalo
+`current_version_id` přímo na sdílené šabloně.
 
-Při vystavení faktury se aktuální verze načítá globálně podle
-`invoice_template_id`, bez vazby na organizaci nebo oprávnění autora
-(`repositories/invoice_repository.ts:468-487`). To je zvlášť nebezpečné, protože
-povolené HTML může obsahovat libovolný statický text. Útočník tedy nemusí obejít
-XSS filtr: stačí, když do šablony přidá vlastní číslo účtu a vizuálně potlačí
-legitimní platební údaje. Následně vystavené faktury jiných organizací mohou
-odvádět platby útočníkovi.
+Při vystavení faktury se aktuální verze načítala globálně podle
+`invoice_template_id`, bez vazby na organizaci nebo oprávnění autora. Povolené
+HTML přitom může obsahovat libovolný statický text, takže nebylo nutné obejít
+XSS filtr: stačilo vložit vlastní číslo účtu a vizuálně potlačit legitimní
+platební údaje.
 
 Historie verzí omezuje možnost zahlazení změny, ale nezabrání jejímu okamžitému
 použití. Již vystavené faktury používají snapshot a zůstávají chráněné; ohrožené
-jsou nové faktury vystavené po škodlivé změně.
+byly nové faktury vystavené po škodlivé změně.
 
-#### Scénář zneužití
+#### Původní scénář zneužití
 
 1. Útočník získá libovolný platný aplikační účet, nemusí být členem cílové
    organizace.
@@ -90,21 +87,36 @@ jsou nové faktury vystavené po škodlivé změně.
 4. Uživatel jiného tenantu vystaví fakturu, která odkazuje na tuto šablonu.
 5. Vygenerované PDF obsahuje podvržené instrukce.
 
-#### Způsob nápravy
+#### Implementovaná náprava
 
-- Zavést explicitní instalační roli, například `SYSTEM_ADMIN` nebo samostatné
-  oprávnění `invoice_templates:write`.
-- Oprávnění kontrolovat serverově v middleware i v repository/service vrstvě;
-  samotné skrytí odkazu v UI nestačí.
-- Pro běžné organizace preferovat tenantově vlastněné šablony
-  (`organization_id`) a samostatně spravovanou, pouze pro čtení dostupnou
-  systémovou knihovnu.
-- Změnu sdílené šablony nezveřejnit okamžitě: použít draft → review/approval →
-  publish, ideálně se čtyřočkovým schválením pro platební dokumenty.
-- Organizaci při vystavení navázat na explicitně schválenou verzi, ne vždy na
-  globální `current_version_id`.
-- Přidat test, že běžný uživatel ani vlastník jedné organizace nemůže
-  vytvořit/publikovat globální verzi, a auditní událost každé změny.
+- Migrace `0017_organization_invoice_templates.sql` přidává vlastnictví
+  `organization_id`, vazbu kopie `source_template_id` a unikátní kopii globální
+  předlohy pro každý subjekt. Databázové triggery odmítnou změnu nebo odstranění
+  globální šablony i vložení či odstranění její verze
+  (`migrations/0017_organization_invoice_templates.sql:1-71`).
+- První úprava globální předlohy atomicky vytvoří tenantovou kopii původní verze
+  a uloží změnu jako další verzi kopie. Následující změny se serializují nad
+  tenantovým záznamem a globální `current_version_id` se nemění
+  (`repositories/invoice_template_repository.ts:270-406`).
+- Výpis, detail, preview, vytvoření i změny šablon vyžadují aktivní subjekt a
+  membership uživatele. Kopie jiného subjektu repository nevrátí
+  (`routes/templates/_middleware.ts:4-24`,
+  `repositories/invoice_template_repository.ts:113-211`).
+- Výchozí šablona subjektu se po první úpravě přepne na jeho kopii. Návrh ani
+  vystavení faktury nepřijmou tenantovou šablonu jiného subjektu
+  (`repositories/invoice_template_repository.ts:363-370`,
+  `repositories/invoice_repository.ts:484-491,665-672`).
+- Integrační regresní test vytváří dva subjekty, upraví tutéž globální předlohu
+  rozdílně a ověřuje oddělené kopie, nezměněný globální obsah a aktuální verzi,
+  tenantovou izolaci, bezpečné souběžné verzování i databázové odmítnutí přímé
+  změny globální předlohy (`tests/auth_integration_test.ts:1327-1502`).
+
+#### Zbývající doporučení
+
+- Instalační administrátorské workflow pro řízenou aktualizaci globální knihovny
+  zatím neexistuje; globální předlohy se mění pouze databázovou migrací.
+- Auditní události pro změny tenantových kopií a zamítnuté pokusy o změnu
+  globálních předloh zůstávají součástí F-09.
 
 ### F-02: Limit těla požadavku lze obejít chybějícím `Content-Length`
 
@@ -394,14 +406,14 @@ rendereru.
 #### Vysvětlení
 
 Aplikace neukládá strukturované bezpečnostní události pro přihlášení, změny
-globálních šablon, identity organizace, bankovních credentials, vystavení
+tenantových kopií šablon, identity organizace, bankovních credentials, vystavení
 faktury, párování plateb nebo práci s přílohami. Nedostatek je uveden i v
 projektové dokumentaci (`SECURITY.md:72-75`, `BACKLOG.md:12-20`).
 
-Nejde o přímou cestu k průniku, ale výrazně zhoršuje detekci a vyšetření F-01,
-kompromitovaného účtu nebo vnitřního útočníka. Neměnná historie šablon obsahuje
-autora verze, což je užitečné, ale nepokrývá pokusy, výsledek akce, request
-kontext ani další citlivé objekty.
+Nejde o přímou cestu k průniku, ale výrazně zhoršuje detekci a vyšetření
+incidentů typu F-01, kompromitovaného účtu nebo vnitřního útočníka. Neměnná
+historie šablon obsahuje autora verze, což je užitečné, ale nepokrývá pokusy,
+výsledek akce, request kontext ani další citlivé objekty.
 
 #### Způsob nápravy
 
@@ -413,8 +425,9 @@ kontext ani další citlivé objekty.
 - Audit ukládat odděleně od běžných aplikačních dat nebo jej alespoň chránit
   před změnou aplikační rolí; exportovat do centrálního logovacího systému s
   retenční politikou.
-- Alertovat na publikaci globální šablony, změnu bankovního napojení, opakované
-  neúspěšné login pokusy a chyby integrity souborů.
+- Alertovat na zamítnutý pokus o změnu globální šablony, změnu tenantové kopie,
+  změnu bankovního napojení, opakované neúspěšné login pokusy a chyby integrity
+  souborů.
 - Přidat administrátorské rozhraní a postup pro pravidelnou kontrolu.
 
 ## Ověřené silné stránky
@@ -448,13 +461,14 @@ fungovaly:
 
 ## Doporučené pořadí nápravy
 
-1. Zablokovat zápis globálních šablon pro běžné účty a připnout organizace ke
-   schváleným verzím (F-01).
-2. Prosadit skutečný streaming limit těla a ověřit limit na proxy (F-02).
-3. Zavést throttling loginu a horní limit hesla (F-03).
-4. Schválit a vynutit autorizační matici `OWNER`/`MEMBER` před zpřístupněním
+1. Prosadit skutečný streaming limit těla a ověřit limit na proxy (F-02).
+2. Zavést throttling loginu a horní limit hesla (F-03).
+3. Schválit a vynutit autorizační matici `OWNER`/`MEMBER` před zpřístupněním
    správy členství (F-04).
-5. Omezit runtime oprávnění a udělat produkční konfiguraci fail-closed (F-05,
+4. Omezit runtime oprávnění a udělat produkční konfiguraci fail-closed (F-05,
    F-06).
-6. Nahradit regex sanitizaci parserem, posílit upload pipeline a doplnit auditní
+5. Nahradit regex sanitizaci parserem, posílit upload pipeline a doplnit auditní
    log (F-07 až F-09).
+
+F-01 je uzavřený implementovanou tenantovou izolací a databázovou neměnností
+globálních předloh.

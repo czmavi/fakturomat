@@ -19,9 +19,13 @@ export const handler = define.handlers<PageData>({
       return new Response("Stránka nebyla nalezena.", { status: 404 });
     }
     const repository = new PostgresInvoiceTemplateRepository();
+    const scope = {
+      organizationId: ctx.state.currentOrganization!.id,
+      userId: ctx.state.user!.id,
+    };
     const [template, versions] = await Promise.all([
-      repository.find(ctx.params.templateId),
-      repository.listVersions(ctx.params.templateId),
+      repository.findForUser(ctx.params.templateId, scope),
+      repository.listVersionsForUser(ctx.params.templateId, scope),
     ]);
     if (template === null) {
       return new Response("Stránka nebyla nalezena.", { status: 404 });
@@ -30,14 +34,14 @@ export const handler = define.handlers<PageData>({
   },
 });
 
-export default define.page<typeof handler>(({ data }) => (
+export default define.page<typeof handler>(({ data, state }) => (
   <main class="px-5 py-10 lg:py-12">
     <Head>
       <title>{data.template.name} · Šablony · Fakturomat</title>
     </Head>
     <div class="mx-auto max-w-7xl">
       <a
-        href="/templates"
+        href={`/templates?organizationId=${state.currentOrganization!.id}`}
         class="text-sm font-semibold text-[#277a4c] hover:underline"
       >
         ← Zpět na šablony
@@ -46,7 +50,8 @@ export default define.page<typeof handler>(({ data }) => (
         <div>
           <div class="flex items-center gap-2">
             <span class="rounded-full bg-[#edf3ee] px-2.5 py-1 text-xs font-semibold text-[#277a4c]">
-              Aktuální v{data.template.currentVersion}
+              {data.template.organizationId === null ? "Globální" : "Vlastní"}
+              {` · aktuální v${data.template.currentVersion}`}
             </span>
           </div>
           <h1 class="mt-3 text-3xl font-semibold tracking-tight">
@@ -57,10 +62,14 @@ export default define.page<typeof handler>(({ data }) => (
           </p>
         </div>
         <a
-          href={`/templates/${data.template.id}/edit`}
+          href={`/templates/${data.template.id}/edit?organizationId=${
+            state.currentOrganization!.id
+          }`}
           class="rounded-xl bg-[#183e2a] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#23583b]"
         >
-          Vytvořit novou verzi
+          {data.template.organizationId === null
+            ? "Upravit ve vlastní kopii"
+            : "Vytvořit novou verzi"}
         </a>
       </div>
 
@@ -68,7 +77,9 @@ export default define.page<typeof handler>(({ data }) => (
         <div class="flex items-center justify-between border-b border-[#e3e7e3] px-5 py-4">
           <h2 class="font-semibold">Preview s testovacími daty</h2>
           <a
-            href={`/templates/${data.template.id}/versions/${data.template.currentVersionId}/preview`}
+            href={`/templates/${data.template.id}/versions/${data.template.currentVersionId}/preview?organizationId=${
+              state.currentOrganization!.id
+            }`}
             target="_blank"
             rel="noopener"
             class="text-sm font-semibold text-[#277a4c] hover:underline"
@@ -77,7 +88,9 @@ export default define.page<typeof handler>(({ data }) => (
           </a>
         </div>
         <iframe
-          src={`/templates/${data.template.id}/versions/${data.template.currentVersionId}/preview`}
+          src={`/templates/${data.template.id}/versions/${data.template.currentVersionId}/preview?organizationId=${
+            state.currentOrganization!.id
+          }`}
           sandbox=""
           title={`Preview šablony ${data.template.name}`}
           class="h-[760px] w-full bg-white"
@@ -104,7 +117,9 @@ export default define.page<typeof handler>(({ data }) => (
                 </p>
               </div>
               <a
-                href={`/templates/${data.template.id}/versions/${version.id}/preview`}
+                href={`/templates/${data.template.id}/versions/${version.id}/preview?organizationId=${
+                  state.currentOrganization!.id
+                }`}
                 target="_blank"
                 rel="noopener"
                 class="text-sm font-semibold text-[#277a4c] hover:underline"
