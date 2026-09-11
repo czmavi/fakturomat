@@ -1,5 +1,6 @@
 import {
   hashPassword,
+  MAX_PASSWORD_BYTES,
   timingSafeEqual,
   verifyPassword,
 } from "@/domain/auth/password.ts";
@@ -25,6 +26,35 @@ Deno.test("malformed password hashes are rejected", async () => {
     !await verifyPassword("any password here", "not-a-password-hash"),
     "malformed hash accepted",
   );
+});
+
+Deno.test("passwords are limited to 512 UTF-8 bytes", async () => {
+  const exactAsciiLimit = "a".repeat(MAX_PASSWORD_BYTES);
+  const exactMultibyteLimit = "č".repeat(MAX_PASSWORD_BYTES / 2);
+  const hash = await hashPassword(exactAsciiLimit, 10_000);
+  const multibyteHash = await hashPassword(exactMultibyteLimit, 10_000);
+  assert(
+    await verifyPassword(exactAsciiLimit, hash),
+    "password at the byte limit was rejected",
+  );
+  assert(
+    await verifyPassword(exactMultibyteLimit, multibyteHash),
+    "multibyte password at the byte limit was rejected",
+  );
+
+  for (const oversized of [`${exactAsciiLimit}a`, `${exactMultibyteLimit}č`]) {
+    let hashRejected = false;
+    try {
+      await hashPassword(oversized, 10_000);
+    } catch {
+      hashRejected = true;
+    }
+    assert(hashRejected, "oversized password was hashed");
+    assert(
+      !await verifyPassword(oversized, multibyteHash),
+      "oversized password reached verification",
+    );
+  }
 });
 
 Deno.test("timingSafeEqual handles equal and unequal lengths", () => {

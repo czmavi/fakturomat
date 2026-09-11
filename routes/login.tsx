@@ -113,6 +113,7 @@ export default define.page<typeof handler>(({ data, state }) => (
             type="password"
             name="password"
             autocomplete="current-password"
+            maxlength={512}
             required
           />
         </label>

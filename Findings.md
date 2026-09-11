@@ -3,7 +3,8 @@
 Datum auditu: 10. září 2026\
 Auditovaná revize: `4a1bce2` plus lokální necommitnuté změny přítomné v
 pracovním stromu\
-Aktualizace nápravy: F-01 napraveno v lokálních změnách dne 10. září 2026\
+Aktualizace nápravy: F-01 napraveno a F-03 částečně napraveno v lokálních
+změnách dne 10. září 2026\
 Rozsah: aplikační kód, routy, repository vrstva, migrace, konfigurace, uploady,
 generování PDF, autentizace, autorizace a uzamčené závislosti
 
@@ -17,7 +18,7 @@ Kritický nález nebyl identifikován. F-01 byl následně napraven; otevřený 
 | ---- | -------------------------------------------------------------------------------------- | -------: | ----------------: |
 | F-01 | **Napraveno:** uživatel mohl změnit globální fakturační šablonu pro všechny tenanty    |   Vysoká |           Střední |
 | F-02 | Limit těla požadavku lze obejít chybějícím `Content-Length`                            |   Vysoká |           Střední |
-| F-03 | Přihlášení nemá aplikační throttling a heslo nemá horní limit délky                    |  Střední |           Střední |
+| F-03 | **Částečně napraveno:** přihlášení nemá aplikační throttling                           |  Střední |           Střední |
 | F-04 | Role `OWNER` a `MEMBER` nejsou vynucovány u citlivých operací                          |  Střední |            Vysoká |
 | F-05 | Produkční proces je spouštěn s neomezenými Deno oprávněními `-A`                       |  Střední |           Střední |
 | F-06 | Bezpečné cookies a HSTS se při chybné konfiguraci vypnou „fail-open“                   |  Střední |             Nízká |
@@ -39,7 +40,7 @@ kontrola SQL dotazů, tenantového scope, CSRF, sessions, uploadů, šablon, PDF
 rendereru a bankovních credentials. Dále proběhlo:
 
 - `deno task check` – úspěšně;
-- `deno task test` – 51 testů úspěšných, 0 neúspěšných, 8 databázových/HTTP
+- `deno task test` – 52 testů úspěšných, 0 neúspěšných, 8 databázových/HTTP
   integračních testů přeskočeno, protože nebyl nastaven `TEST_DATABASE_URL`;
 - `deno audit` – pro aktuálně uzamčené závislosti nenalezena žádná známá
   zranitelnost;
@@ -155,36 +156,53 @@ zranitelné.
 - Doplnit integrační test s chunked tělem bez `Content-Length`, který po
   překročení limitu očekává `413` a ověří ukončení streamu.
 
-### F-03: Přihlášení nemá aplikační throttling a heslo nemá horní limit délky
+### F-03: Přihlášení nemá aplikační throttling
 
 **Severita:** Střední\
 **Obtížnost nápravy:** Střední\
 **Kategorie:** CWE-307 – Improper Restriction of Excessive Authentication
-Attempts; CWE-400
+Attempts; CWE-400\
+**Stav:** Částečně napraveno 10. září 2026; limit hesla hotový, throttling
+zůstává otevřený
 
 #### Vysvětlení
 
 Každý neúspěšný login provede PBKDF2 s 600 000 iteracemi, včetně pokusu na
 neexistující účet (`services/auth_service.ts:39-52`). To správně omezuje časový
 user-enumeration rozdíl, ale bez throttlingu současně vytváří nákladný veřejný
-endpoint. Login routa nepoužívá rate limiter (`routes/login.tsx:23-43`) a heslo
-je před PBKDF2 přijato bez horního limitu; celé se kóduje do paměti
-(`domain/auth/password.ts:19-35`).
+endpoint. Login routa nadále nepoužívá rate limiter (`routes/login.tsx:23-43`).
 
 Útočník může provádět credential stuffing a zároveň vysokým počtem souběžných
-PBKDF2 výpočtů vyčerpat CPU. Dlouhá hesla zvyšují spotřebu paměti. Povinný proxy
-limit popsaný v dokumentaci je užitečný, ale není vlastností kódu a při více IP
-adresách nebo přímém přístupu může být nedostatečný.
+PBKDF2 výpočtů vyčerpat CPU. Povinný proxy limit popsaný v dokumentaci je
+užitečný, ale není vlastností kódu a při více IP adresách nebo přímém přístupu
+může být nedostatečný.
 
-#### Způsob nápravy
+#### Implementovaná částečná náprava
+
+- `hashPassword` i `verifyPassword` nyní prosazují maximálně 512 bajtů v UTF-8.
+  Kontrola proběhne před UTF-8 alokací a před PBKDF2; vytvoření příliš dlouhého
+  hesla skončí chybou a ověření vrátí `false`
+  (`domain/auth/password.ts:5-34,67-92`).
+- Login formulář má pro běžného uživatele odpovídající `maxlength=512`;
+  serverová bajtová kontrola zůstává rozhodující (`routes/login.tsx:107-118`).
+- Regresní test pokrývá přesnou hranici pro ASCII i vícebajtové UTF-8 heslo a
+  odmítnutí 513+ bajtů při hashování i ověřování
+  (`tests/password_test.ts:31-58`).
+
+Horní limit odstranil zesílení jednoho požadavku extrémně dlouhým heslem, ale
+neřeší počet přípustných pokusů. Závažnost proto po přehodnocení zůstává
+**střední**: veřejně dosažitelný útočník může stále paralelně vynucovat velké
+množství výpočtů se 600 000 iteracemi a provádět credential stuffing.
+
+#### Zbývající způsob nápravy
 
 - Přidat distribuovaný limiter sdílený všemi instancemi, kombinující
   účet/normalizovaný e-mail, zdrojovou IP a globální kapacitní limit.
 - Použít progresivní zpoždění nebo krátkodobé blokování a odpověď `429` s
   `Retry-After`; nezavádět snadno zneužitelné trvalé zamykání účtu pouze podle
   e-mailu.
-- Nastavit rozumný horní limit hesla před PBKDF2, například 256 nebo 1 024
-  bajtů, a malý limit celého login requestu.
+- Doplnit malý streaming limit celého login requestu; obecný problém těla bez
+  `Content-Length` je současně sledován ve F-02.
 - Monitorovat neúspěšné pokusy bez logování zadaného hesla a upozorňovat na
   distribuované útoky.
 - Zachovat generickou chybovou zprávu a dummy hash, které jsou implementované
@@ -437,8 +455,9 @@ fungovaly:
 
 - session token má vysokou entropii, v databázi je pouze jeho SHA-256 hash,
   session má pevnou expiraci a lze ji revokovat;
-- hesla používají PBKDF2-HMAC-SHA-256 s náhodnou solí a 600 000 iteracemi; login
-  odpověď je generická a dummy hash omezuje jednoduchou enumeraci účtů;
+- hesla používají PBKDF2-HMAC-SHA-256 s náhodnou solí a 600 000 iteracemi, mají
+  horní limit 512 UTF-8 bajtů před PBKDF2; login odpověď je generická a dummy
+  hash omezuje jednoduchou enumeraci účtů;
 - CSRF kombinuje origin kontrolu Fresh middleware a náhodný double-submit token
   porovnávaný konstantním časem;
 - business repository dotazy důsledně kombinují `organization_id` s membership,
@@ -462,7 +481,7 @@ fungovaly:
 ## Doporučené pořadí nápravy
 
 1. Prosadit skutečný streaming limit těla a ověřit limit na proxy (F-02).
-2. Zavést throttling loginu a horní limit hesla (F-03).
+2. Zavést throttling loginu (zbývající část F-03).
 3. Schválit a vynutit autorizační matici `OWNER`/`MEMBER` před zpřístupněním
    správy členství (F-04).
 4. Omezit runtime oprávnění a udělat produkční konfiguraci fail-closed (F-05,

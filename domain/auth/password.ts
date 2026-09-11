@@ -2,8 +2,36 @@ const ALGORITHM = "PBKDF2";
 const HASH_NAME = "SHA-256";
 const HASH_LENGTH = 32;
 export const DEFAULT_PASSWORD_ITERATIONS = 600_000;
+export const MAX_PASSWORD_BYTES = 512;
 
 const encoder = new TextEncoder();
+
+function exceedsUtf8ByteLimit(value: string, limit: number): boolean {
+  let bytes = 0;
+  for (let index = 0; index < value.length; index++) {
+    const codeUnit = value.charCodeAt(index);
+    if (codeUnit <= 0x7f) {
+      bytes += 1;
+    } else if (codeUnit <= 0x7ff) {
+      bytes += 2;
+    } else if (
+      codeUnit >= 0xd800 && codeUnit <= 0xdbff &&
+      index + 1 < value.length
+    ) {
+      const next = value.charCodeAt(index + 1);
+      if (next >= 0xdc00 && next <= 0xdfff) {
+        bytes += 4;
+        index++;
+      } else {
+        bytes += 3;
+      }
+    } else {
+      bytes += 3;
+    }
+    if (bytes > limit) return true;
+  }
+  return false;
+}
 
 function encodeBase64Url(value: Uint8Array): string {
   return Uint8Array.from(value).toBase64({
@@ -43,6 +71,9 @@ export async function hashPassword(
   if (password.length < 12) {
     throw new Error("Password must contain at least 12 characters");
   }
+  if (exceedsUtf8ByteLimit(password, MAX_PASSWORD_BYTES)) {
+    throw new Error(`Password must not exceed ${MAX_PASSWORD_BYTES} bytes`);
+  }
   if (!Number.isInteger(iterations) || iterations < 10_000) {
     throw new Error("Password hash iteration count is too low");
   }
@@ -58,6 +89,7 @@ export async function verifyPassword(
   password: string,
   encodedHash: string,
 ): Promise<boolean> {
+  if (exceedsUtf8ByteLimit(password, MAX_PASSWORD_BYTES)) return false;
   try {
     const [algorithm, rawIterations, rawSalt, rawExpected, extra] = encodedHash
       .split("$");
