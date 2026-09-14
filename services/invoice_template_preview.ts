@@ -1,10 +1,13 @@
 import type { InvoiceViewModel } from "@/domain/invoices/invoice_view_model.ts";
-import { generateQrPaymentSvg } from "@/services/qr_payment_service.ts";
+import {
+  createQrPaymentMatrix,
+  generateQrPaymentSvg,
+} from "@/services/qr_payment_service.ts";
 
 export async function createPreviewInvoiceViewModel(): Promise<
   InvoiceViewModel
 > {
-  const qrSvg = await generateQrPaymentSvg({
+  const qrInput = {
     bankAccount: {
       name: "Hlavní účet",
       bankName: "Fio banka",
@@ -20,7 +23,9 @@ export async function createPreviewInvoiceViewModel(): Promise<
     variableSymbol: "20260001",
     dueDate: "2026-09-22",
     message: "FAKTURA 2026-0001",
-  });
+  };
+  const qrSvg = await generateQrPaymentSvg(qrInput);
+  const qrMatrix = createQrPaymentMatrix(qrInput);
   return {
     supplier: {
       name: "Studio Sever s.r.o.",
@@ -68,6 +73,7 @@ export async function createPreviewInvoiceViewModel(): Promise<
       account: "2900000001/2010",
       iban: "CZ6320100000002900000001",
       qrSvg,
+      qrMatrix,
     },
   };
 }

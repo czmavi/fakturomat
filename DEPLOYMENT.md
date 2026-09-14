@@ -11,7 +11,6 @@ Minimální produkční instalace obsahuje:
 - jednu nebo více instancí sestavené Fresh aplikace;
 - PostgreSQL 17 v privátní síti;
 - persistentní adresář pro PDF, loga a přílohy;
-- Chromium nebo Google Chrome pro generování PDF;
 - reverzní proxy s TLS, limitem těla požadavku a rate limitingem přihlášení.
 
 Soubor `compose.yaml` v repozitáři spouští pouze lokální vývojovou databázi.
@@ -22,32 +21,31 @@ Používá známé heslo, publikuje port na hostitele a není produkčním deplo
 - Deno 2.9 nebo novější v rámci řady 2.x;
 - PostgreSQL 17; vývoj a integrační testy jsou ověřené proti verzi z
   `compose.yaml`;
-- Chromium nebo Google Chrome dostupný uživateli aplikačního procesu;
 - HTTPS doména a reverzní proxy;
 - zapisovatelný persistentní adresář pro `STORAGE_LOCAL_ROOT`;
 - oddělená testovací databáze pro integrační testy.
 
-Provozní uživatel má mít přístup pouze ke kódu aplikace, storage adresáři,
-Chromiu a potřebným síťovým cílům. PostgreSQL ani storage nemají být veřejně
-dostupné.
+Provozní uživatel má mít přístup pouze ke kódu aplikace, storage adresáři a
+potřebným síťovým cílům. PostgreSQL ani storage nemají být veřejně dostupné.
 
 ## Konfigurace
 
 Produkční proměnné ukládejte do správce tajemství nebo do souboru čitelného jen
 provozním uživatelem. Soubor `.env` nepatří do verzovacího systému.
 
-| Proměnná                          | Povinnost       | Význam                                                            |
-| --------------------------------- | --------------- | ----------------------------------------------------------------- |
-| `APP_ENV`                         | ano             | V produkci vždy `production`; zapíná `Secure` cookies a HSTS.     |
-| `DATABASE_URL`                    | ano             | PostgreSQL connection string. Heslo musí být produkční tajemství. |
-| `DATABASE_MAX_CONNECTIONS`        | ne              | Velikost poolu jedné instance, výchozí `10`, rozsah 1–100.        |
-| `STORAGE_LOCAL_ROOT`              | ano             | Absolutní cesta na persistentním svazku.                          |
-| `BANK_CREDENTIALS_ENCRYPTION_KEY` | ano pro Fio     | Base64 hodnota dekódující se přesně na 32 bajtů.                  |
-| `CHROMIUM_EXECUTABLE_PATH`        | podle instalace | Nutné, pokud prohlížeč není na automaticky podporované cestě.     |
-| `FAKTUROMAT_ADMIN_EMAIL`          | jen bootstrap   | E-mail uživatele zakládaného přes CLI.                            |
-| `FAKTUROMAT_ADMIN_NAME`           | jen bootstrap   | Zobrazované jméno zakládaného uživatele.                          |
-| `FAKTUROMAT_ADMIN_PASSWORD`       | jen bootstrap   | Heslo o délce alespoň 12 znaků; po použití odstranit.             |
-| `TEST_DATABASE_URL`               | jen testy       | Connection string oddělené databáze, kterou mohou testy měnit.    |
+| Proměnná                          | Povinnost     | Význam                                                            |
+| --------------------------------- | ------------- | ----------------------------------------------------------------- |
+| `APP_ENV`                         | ano           | V produkci vždy `production`; zapíná `Secure` cookies a HSTS.     |
+| `DATABASE_URL`                    | ano           | PostgreSQL connection string. Heslo musí být produkční tajemství. |
+| `DATABASE_MAX_CONNECTIONS`        | ne            | Velikost poolu jedné instance, výchozí `10`, rozsah 1–100.        |
+| `BETTER_AUTH_URL`                 | ano           | Veřejný HTTPS origin aplikace bez cesty.                          |
+| `BETTER_AUTH_SECRET`              | ano           | Náhodný tajný klíč Better Auth, minimálně 32 znaků.               |
+| `STORAGE_LOCAL_ROOT`              | ano           | Absolutní cesta na persistentním svazku.                          |
+| `BANK_CREDENTIALS_ENCRYPTION_KEY` | ano pro Fio   | Base64 hodnota dekódující se přesně na 32 bajtů.                  |
+| `FAKTUROMAT_ADMIN_EMAIL`          | jen bootstrap | E-mail uživatele zakládaného přes CLI.                            |
+| `FAKTUROMAT_ADMIN_NAME`           | jen bootstrap | Zobrazované jméno zakládaného uživatele.                          |
+| `FAKTUROMAT_ADMIN_PASSWORD`       | jen bootstrap | Heslo o délce alespoň 12 znaků; po použití odstranit.             |
+| `TEST_DATABASE_URL`               | jen testy     | Connection string oddělené databáze, kterou mohou testy měnit.    |
 
 Šifrovací klíč vytvořte jednou, například:
 
@@ -65,9 +63,10 @@ Příklad produkčního prostředí bez bootstrap údajů:
 APP_ENV=production
 DATABASE_URL=postgres://fakturomat:strong-password@db.internal:5432/fakturomat
 DATABASE_MAX_CONNECTIONS=10
+BETTER_AUTH_URL=https://faktury.example.cz
+BETTER_AUTH_SECRET=base64-encoded-random-secret
 STORAGE_LOCAL_ROOT=/var/lib/fakturomat/storage
 BANK_CREDENTIALS_ENCRYPTION_KEY=base64-encoded-32-byte-key
-CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium
 ```
 
 ## Příprava releasu
@@ -88,7 +87,7 @@ vytvoří serverový vstup `_fresh/server.js` a klientské assety v `_fresh/`.
 
 1. Vytvořte produkční databázi, databázového uživatele a persistentní storage
    adresář.
-2. Nainstalujte Deno, Chromium a závislosti projektu.
+2. Nainstalujte Deno a závislosti projektu.
 3. Nastavte produkční proměnné prostředí.
 4. Aplikujte migrace před spuštěním aplikace:
 
@@ -147,7 +146,7 @@ WantedBy=multi-user.target
 
 Po změně jednotky proveďte `systemctl daemon-reload`, službu spusťte a povolte
 její start po rebootu. Ověřte, že její uživatel může zapisovat do
-`STORAGE_LOCAL_ROOT` a spustit nakonfigurované Chromium.
+`STORAGE_LOCAL_ROOT`.
 
 ## Reverzní proxy
 
@@ -200,6 +199,11 @@ limit_req_zone $binary_remote_addr zone=fakturomat_login:10m rate=5r/m;
 Limit dolaďte podle reálného provozu a monitorujte odmítnuté požadavky.
 
 ## Upgrade
+
+Migrace `0018_better_auth.sql` zachová uživatele i jejich hesla, ale odstraní
+původní sessions. Při jejím nasazení proto budou všichni právě přihlášení
+uživatelé jednorázově odhlášeni. `BETTER_AUTH_SECRET` musí být před prvním
+startem nastavený a při dalších releasech zůstat stejný.
 
 Každý release nasazujte v tomto pořadí:
 
@@ -258,7 +262,7 @@ Sledujte alespoň:
 
 - dostupnost `/login`, latenci a počet HTTP 5xx;
 - neúspěšná přihlášení a zásahy rate limitu na proxy;
-- volné místo storage, databáze a dočasného adresáře pro Chromium;
+- volné místo storage a databáze a paměť spotřebovanou při generování PDF;
 - stav PostgreSQL spojení a vyčerpání connection poolu;
 - selhání a stáří poslední Fio synchronizace;
 - chyby generování PDF a kontroly integrity souborů;

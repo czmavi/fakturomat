@@ -1,8 +1,6 @@
 import { App, csrf, type Middleware } from "fresh";
 import { closeDb, getDb } from "@/database/client.ts";
 import { migrate } from "@/database/migrate.ts";
-import { hashPassword } from "@/domain/auth/password.ts";
-import { PostgresAuthRepository } from "@/repositories/auth_repository.ts";
 import { PostgresBankAccountRepository } from "@/repositories/bank_account_repository.ts";
 import { PostgresBankConnectionRepository } from "@/repositories/bank_connection_repository.ts";
 import { PostgresBankTransactionRepository } from "@/repositories/bank_transaction_repository.ts";
@@ -12,9 +10,10 @@ import { PostgresExpenseCategoryRepository } from "@/repositories/expense_catego
 import { PostgresExpensePaymentRepository } from "@/repositories/expense_payment_repository.ts";
 import { PostgresExpenseRepository } from "@/repositories/expense_repository.ts";
 import {
-  hashSessionToken,
+  closeBetterAuthDatabase,
+  getAuth,
   SESSION_COOKIE_NAME,
-} from "@/services/auth_service.ts";
+} from "@/services/better_auth.ts";
 import { BankConnectionService } from "@/services/banking/bank_connection_service.ts";
 import { AesGcmCredentialCipher } from "@/services/banking/credential_cipher.ts";
 import { CSRF_COOKIE_NAME } from "@/services/csrf_service.ts";
@@ -33,6 +32,10 @@ import { handler as attachmentHandler } from "@/routes/o/[organizationId]/expens
 import { handler as newExpenseHandler } from "@/routes/o/[organizationId]/expenses/new.tsx";
 import { handler as newOrganizationHandler } from "@/routes/organizations/new.tsx";
 import type { State } from "@/utils.ts";
+import {
+  LEGACY_TEST_PASSWORD_HASH,
+  TestAuthRepository,
+} from "@/tests/auth_test_helper.ts";
 
 const testDatabaseUrl = Deno.env.get("TEST_DATABASE_URL");
 const ORIGIN = "http://fakturomat.test";
@@ -142,7 +145,6 @@ async function login(
 ): Promise<{
   csrfToken: string;
   cookie: string;
-  rawSessionToken: string;
   response: Response;
 }> {
   const csrfState = await csrfSession(handler);
@@ -159,7 +161,6 @@ async function login(
   return {
     csrfToken: csrfState.token,
     cookie: `${csrfState.cookie}; ${SESSION_COOKIE_NAME}=${rawSessionToken}`,
-    rawSessionToken,
     response,
   };
 }
@@ -191,7 +192,7 @@ Deno.test({
     await migrate();
 
     const sql = getDb();
-    const authRepository = new PostgresAuthRepository(sql);
+    const authRepository = new TestAuthRepository(sql);
     const ownerId = crypto.randomUUID();
     const outsiderId = crypto.randomUUID();
     const ownerEmail = `http-owner-${ownerId}@example.test`;
@@ -200,7 +201,7 @@ Deno.test({
 
     try {
       const password = "integration-password";
-      const passwordHash = await hashPassword(password, 10_000);
+      const passwordHash = LEGACY_TEST_PASSWORD_HASH;
       await authRepository.createUser({
         id: ownerId,
         email: ownerEmail,
@@ -547,9 +548,9 @@ Deno.test({
       ));
       assert(badLogout.status === 403, "logout accepted a foreign CSRF token");
       assert(
-        await authRepository.findSessionUser(
-          await hashSessionToken(owner.rawSessionToken),
-        ) !== null,
+        await getAuth().api.getSession({
+          headers: new Headers({ cookie: owner.cookie }),
+        }) !== null,
         "failed CSRF logout revoked the session",
       );
       const logoutResponse = await handler(formRequest(
@@ -566,9 +567,9 @@ Deno.test({
         "logout did not expire the session cookie",
       );
       assert(
-        await authRepository.findSessionUser(
-          await hashSessionToken(owner.rawSessionToken),
-        ) === null,
+        await getAuth().api.getSession({
+          headers: new Headers({ cookie: owner.cookie }),
+        }) === null,
         "logout did not revoke the server-side session",
       );
     } finally {
@@ -576,6 +577,7 @@ Deno.test({
         await sql`DELETE FROM organizations WHERE id = ${organizationId}`;
       }
       await sql`DELETE FROM users WHERE id IN (${ownerId}, ${outsiderId})`;
+      await closeBetterAuthDatabase();
       await closeDb();
       await Deno.remove(storageRoot, { recursive: true });
       if (previousDatabaseUrl === undefined) Deno.env.delete("DATABASE_URL");

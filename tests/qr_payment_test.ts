@@ -1,6 +1,7 @@
 import type { BankAccountSnapshot } from "@/domain/invoices/types.ts";
 import {
   createCzechIban,
+  createQrPaymentMatrix,
   createSpaydPayload,
   generateQrPaymentSvg,
   normalizeSpaydMessage,
@@ -92,4 +93,13 @@ Deno.test("QR payment is rendered locally as safe SVG", async () => {
   assert(svg.startsWith("<svg"), "QR output is not SVG");
   assert(svg.includes("<path"), "QR SVG has no path data");
   assert(!/<script|foreignObject|onload=/i.test(svg), "QR SVG is unsafe");
+});
+
+Deno.test("QR payment creates a square matrix for vector PDF embedding", () => {
+  const matrix = createQrPaymentMatrix(payment);
+  assert(matrix.size >= 21, "QR matrix is too small");
+  assert(
+    matrix.data.length === matrix.size * matrix.size,
+    "QR matrix dimensions do not match its data",
+  );
 });

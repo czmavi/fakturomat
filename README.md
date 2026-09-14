@@ -31,8 +31,7 @@ historických i párovacích dat.
 
 ## Lokální spuštění
 
-Požadavky: Deno 2.9+, PostgreSQL a Chromium nebo Google Chrome. Vývojovou
-databázi lze spustit přes Docker:
+Požadavky: Deno 2.9+ a PostgreSQL. Vývojovou databázi lze spustit přes Docker:
 
 ```sh
 docker compose up -d postgres
@@ -69,6 +68,10 @@ zálohy, obnovu a smoke test popisuje [DEPLOYMENT.md](DEPLOYMENT.md).
 
 - `DATABASE_URL` – povinný PostgreSQL connection string.
 - `DATABASE_MAX_CONNECTIONS` – velikost connection poolu, výchozí hodnota `10`.
+- `BETTER_AUTH_URL` – veřejný origin aplikace bez cesty, lokálně například
+  `http://localhost:5173`.
+- `BETTER_AUTH_SECRET` – náhodný tajný klíč pro podepisování cookies Better
+  Auth; vytvořte jej jednou například pomocí `openssl rand -base64 32`.
 - `APP_ENV` – `development`, `test` nebo `production`; v produkci přidává
   session a CSRF cookies atribut `Secure`.
 - `FAKTUROMAT_ADMIN_EMAIL`, `FAKTUROMAT_ADMIN_NAME` a
@@ -78,8 +81,6 @@ zálohy, obnovu a smoke test popisuje [DEPLOYMENT.md](DEPLOYMENT.md).
 - `STORAGE_LOCAL_ROOT` – kořen lokální implementace object storage, výchozí
   hodnota `./data/storage`. Produkční storage lze později vyměnit za jinou
   implementaci stejného rozhraní.
-- `CHROMIUM_EXECUTABLE_PATH` – volitelná explicitní cesta ke Chromiu nebo Google
-  Chrome. Na běžných cestách v macOS a Linuxu se prohlížeč detekuje automaticky.
 - `BANK_CREDENTIALS_ENCRYPTION_KEY` – povinný 32bajtový Base64 klíč pro
   aplikační AES-256-GCM šifrování bankovních přihlašovacích údajů.
 
@@ -141,7 +142,7 @@ bankovní transakce.
 
 - `routes/` – SSR stránky a HTTP handlery;
 - `domain/` – doménové typy a bezpečné primitivy;
-- `services/` – auth, session, cookies a CSRF orchestrace;
+- `services/` – integrace Better Auth, cookies a CSRF orchestrace;
 - `services/banking/` – šifrování přihlašovacích údajů a provider integrace;
 - `repositories/` – parametrizované databázové dotazy;
 - `database/` – PostgreSQL klient a migrační runner;
@@ -157,10 +158,11 @@ bankovní transakce.
 - [BACKLOG.md](BACKLOG.md) – samostatně prioritizované kandidáty pro v2 a trvalé
   produktové non-goals.
 
-Hesla jsou ukládána pomocí PBKDF2-HMAC-SHA-256 s náhodnou solí a 600 000
-iteracemi. V databázi se ukládá pouze SHA-256 hash náhodného session tokenu.
-Session má fixní životnost sedm dní a lze ji serverově revokovat. Změnové HTTP
-požadavky chrání kontrola originu i double-submit CSRF token.
+Přihlášení, účty, cookies a sessions spravuje Better Auth. Nová hesla používají
+jeho výchozí `scrypt`; účty migrované z původní implementace mohou do změny
+hesla dál používat původní PBKDF2 hash. Session má fixní životnost sedm dní a
+lze ji serverově revokovat. Změnové HTTP požadavky chrání kontrola originu i
+double-submit CSRF token.
 
 Business routes používají explicitní scope `/o/:organizationId/...`. Scope
 middleware přijme organizaci pouze tehdy, když dotaz současně odpovídá jejímu ID
@@ -173,10 +175,10 @@ souboru.
 
 Výchozí fakturační šablony jsou globální a pouze pro čtení. První úprava vytvoří
 vlastní kopii pro aktivní subjekt a každé další uložení její novou neměnnou
-verzi. Kopie nejsou dostupné jiným subjektům. Renderer povoluje jen známé
-placeholdery, hodnoty escapuje a validátor odmítá aktivní prvky, JavaScript i
-externí zdroje. Náhled běží v sandboxovaném iframe a je dostupný jen členům
-příslušného subjektu.
+verzi. Kopie nejsou dostupné jiným subjektům. PDF má pevný programový layout;
+šablona může pomocí CSS proměnných `--pdf-primary` a `--pdf-accent` měnit jeho
+barvy. Uložené HTML zůstává kvůli kompatibilitě, ale renderer je neinterpretuje.
+PDF náhled je dostupný jen členům příslušného subjektu.
 
 Koncept faktury drží živé reference na kontakt, bankovní účet, číselnou řadu a
 šablonu. Dokud je ve stavu `DRAFT`, lze měnit jeho hlavičku i položky. Částky se
@@ -188,18 +190,19 @@ položek vystavené faktury.
 
 QR Platba vzniká lokálně bez externího API. Pro český účet bez zadaného IBANu
 aplikace IBAN bezpečně odvodí, sestaví kanonický SPAYD payload s částkou, měnou,
-variabilním symbolem, splatností a zprávou a vykreslí jej jako SVG. Stejný SVG
-obsah nahrazuje placeholder `{{payment.qr}}` v HTML šabloně a přihlášenému
-uživateli je dostupný také na tenantově chráněném endpointu faktury.
+variabilním symbolem, splatností a zprávou a vykreslí jej jako SVG pro chráněný
+endpoint a jako ostrou vektorovou matici přímo v PDF.
 
-Při vystavení se z uložených snapshotů sestaví `InvoiceViewModel`, konkrétní
-uzamčená verze HTML/CSS šablony a QR SVG. Headless Chromium z výsledného HTML
-vytvoří PDF, které se uloží přes object storage abstraction pod náhodným klíčem.
-Metadata včetně SHA-256 a velikosti jsou v tabulce `invoice_documents` a
-databázový trigger je chrání před změnou nebo samostatným smazáním. Vystavení,
-uložení metadat a změna stavu probíhají v jedné transakci; při chybě renderování
-zůstane faktura konceptem. Download před odesláním znovu ověřuje hash i velikost
-objektu a vždy kontroluje organizaci a membership uživatele.
+Při vystavení se z uložených snapshotů sestaví `InvoiceViewModel` a použije se
+konkrétní uzamčená verze šablony. `pdf-lib` vytvoří PDF přímo v procesu, bez
+Chromia, HTML rendereru a síťových požadavků. Českou diakritiku zajišťuje
+vložený DejaVu Sans a QR obrázek je součástí dokumentu. PDF se uloží přes object
+storage abstraction pod náhodným klíčem. Metadata včetně SHA-256 a velikosti
+jsou v tabulce `invoice_documents` a databázový trigger je chrání před změnou
+nebo samostatným smazáním. Vystavení, uložení metadat a změna stavu probíhají v
+jedné transakci; při chybě renderování zůstane faktura konceptem. Download před
+odesláním znovu ověřuje hash i velikost objektu a vždy kontroluje organizaci a
+membership uživatele.
 
 Náklady jsou vedené jako jednoduchá interní evidence v tabulkách `expenses` a
 `expense_categories`. Kontakt i kategorie jsou volitelné, ale případná vazba je
@@ -306,12 +309,15 @@ požadavků na TLS, rate limiting a maximální velikost těla na reverzní prox
 - `0017_organization_invoice_templates.sql` – tenantové kopie fakturačních
   šablon, izolace mezi subjekty a databázová ochrana globálních předloh proti
   změně.
+- `0018_better_auth.sql` – převod hesel do Better Auth účtů, doplnění jeho
+  uživatelských polí a nahrazení původních sessions tabulkami Better Auth.
 
 ## Známá omezení v1
 
 - Zatím není UI pro změnu nebo obnovu hesla; uživatel se zakládá přes CLI.
-- Není implementováno omezení počtu chybných přihlášení ani externí identity
-  provider.
+- Omezení chybných přihlášení v Better Auth je lokální pro jednu aplikační
+  instanci; distribuovaný limit musí zajistit reverzní proxy. Externí identity
+  provider není nakonfigurován.
 - Auth integrační test vyžaduje explicitní `TEST_DATABASE_URL`.
 - Pozvání dalších uživatelů a správa memberships zatím nemají UI.
 - Správa instalační knihovny globálních šablon nemá UI; subjekty upravují pouze

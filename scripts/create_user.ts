@@ -1,6 +1,5 @@
-import { closeDb } from "@/database/client.ts";
-import { AuthService } from "@/services/auth_service.ts";
-import { PostgresAuthRepository } from "@/repositories/auth_repository.ts";
+import { hashPassword } from "better-auth/crypto";
+import { closeDb, getDb } from "@/database/client.ts";
 
 function argument(name: string): string | undefined {
   const index = Deno.args.indexOf(name);
@@ -20,9 +19,42 @@ if (import.meta.main) {
       );
     }
 
-    const service = new AuthService(new PostgresAuthRepository());
-    const user = await service.createUser({ email, displayName, password });
-    console.log(`Created user ${user.email}.`);
+    const normalizedEmail = email.trim().toLocaleLowerCase("en-US");
+    const normalizedName = displayName.trim();
+    if (
+      normalizedEmail.length > 254 ||
+      !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)
+    ) {
+      throw new Error("Invalid email address");
+    }
+    if (!normalizedName || normalizedName.length > 120) {
+      throw new Error("Invalid display name");
+    }
+    if (password.length < 12 || password.length > 512) {
+      throw new Error("Password must contain 12 to 512 characters");
+    }
+
+    const sql = getDb();
+    const userId = crypto.randomUUID();
+    const passwordHash = await hashPassword(password);
+    await sql.begin(async (transaction) => {
+      await transaction`
+        INSERT INTO users (
+          id, email, display_name, email_verified, is_active
+        ) VALUES (
+          ${userId}, ${normalizedEmail}, ${normalizedName}, true, true
+        )
+      `;
+      await transaction`
+        INSERT INTO auth_accounts (
+          id, account_id, provider_id, user_id, password
+        ) VALUES (
+          ${crypto.randomUUID()}, ${userId}, 'credential', ${userId},
+          ${passwordHash}
+        )
+      `;
+    });
+    console.log(`Created user ${normalizedEmail}.`);
   } finally {
     await closeDb();
   }

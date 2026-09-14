@@ -6,7 +6,6 @@ import type { OrganizationSummary } from "@/domain/organizations/types.ts";
 // data among middlewares, layouts and routes.
 export interface State {
   user: AuthenticatedUser | null;
-  sessionTokenHash: string | null;
   csrfToken: string;
   organizations: OrganizationSummary[];
   currentOrganization: OrganizationSummary | null;

@@ -1,7 +1,5 @@
 import { define } from "@/utils.ts";
-import { PostgresAuthRepository } from "@/repositories/auth_repository.ts";
-import { SESSION_COOKIE_NAME } from "@/services/auth_service.ts";
-import { createCookie } from "@/services/cookie_service.ts";
+import { getAuth } from "@/services/better_auth.ts";
 import { isValidCsrfToken } from "@/services/csrf_service.ts";
 
 export const handler = define.handlers({
@@ -11,21 +9,14 @@ export const handler = define.handlers({
       return new Response("Forbidden", { status: 403 });
     }
 
-    if (ctx.state.sessionTokenHash !== null) {
-      await new PostgresAuthRepository().revokeSession(
-        ctx.state.sessionTokenHash,
-      );
-    }
-
+    const authResponse = await getAuth().api.signOut({
+      headers: ctx.req.headers,
+      asResponse: true,
+    });
     const response = ctx.redirect("/login", 303);
-    response.headers.append(
-      "Set-Cookie",
-      createCookie(SESSION_COOKIE_NAME, "", {
-        httpOnly: true,
-        maxAge: 0,
-        sameSite: "Lax",
-      }),
-    );
+    for (const cookie of authResponse.headers.getSetCookie()) {
+      response.headers.append("Set-Cookie", cookie);
+    }
     return response;
   },
 });

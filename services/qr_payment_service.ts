@@ -1,4 +1,5 @@
-import QRCode from "qrcode";
+// @ts-types="npm:@types/qrcode@1.5.6"
+import QRCode from "qrcode/core";
 import type { BankAccountSnapshot } from "@/domain/invoices/types.ts";
 import {
   normalizeMoney,
@@ -13,6 +14,11 @@ export interface QrPaymentInput {
   variableSymbol: string | null;
   dueDate: string;
   message: string;
+}
+
+export interface QrCodeMatrix {
+  size: number;
+  data: Uint8Array;
 }
 
 export class QrPaymentValidationError extends Error {}
@@ -140,14 +146,27 @@ function isIsoDate(value: string): boolean {
     date.toISOString().slice(0, 10) === value;
 }
 
-export async function generateQrPaymentSvg(
-  input: QrPaymentInput,
-): Promise<string> {
-  return await QRCode.toString(createSpaydPayload(input), {
-    type: "svg",
+export function generateQrPaymentSvg(input: QrPaymentInput): string {
+  const matrix = createQrPaymentMatrix(input);
+  const margin = 4;
+  const dimension = matrix.size + margin * 2;
+  let path = "";
+  for (let y = 0; y < matrix.size; y++) {
+    for (let x = 0; x < matrix.size; x++) {
+      if (matrix.data[y * matrix.size + x]) {
+        path += `M${x + margin} ${y + margin}h1v1h-1z`;
+      }
+    }
+  }
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${dimension} ${dimension}" shape-rendering="crispEdges"><rect width="100%" height="100%" fill="#fff"/><path d="${path}" fill="#18211c"/></svg>`;
+}
+
+export function createQrPaymentMatrix(input: QrPaymentInput): QrCodeMatrix {
+  const qr = QRCode.create(createSpaydPayload(input), {
     errorCorrectionLevel: "M",
-    margin: 4,
-    width: 256,
-    color: { dark: "#18211cff", light: "#ffffffff" },
   });
+  return {
+    size: qr.modules.size,
+    data: new Uint8Array(qr.modules.data),
+  };
 }

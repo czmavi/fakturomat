@@ -1,8 +1,3 @@
-import { createPreviewInvoiceViewModel } from "@/services/invoice_template_preview.ts";
-import {
-  escapeHtml,
-  renderInvoiceTemplate,
-} from "@/services/invoice_template_renderer.ts";
 import {
   InvoiceTemplateValidationError,
   validateInvoiceTemplate,
@@ -11,35 +6,6 @@ import {
 function assert(condition: boolean, message: string): asserts condition {
   if (!condition) throw new Error(message);
 }
-
-Deno.test("template renderer escapes scalar and item values", async () => {
-  const viewModel = await createPreviewInvoiceViewModel();
-  viewModel.supplier.name = '<img src=x onerror="alert(1)">';
-  viewModel.invoice.items[0].description = "<script>alert(1)</script>";
-  const output = renderInvoiceTemplate(
-    "<h1>{{ supplier.name }}</h1><table>{{invoice.items}}</table>{{payment.qr}}",
-    "body { color: black; }",
-    viewModel,
-  );
-  assert(!output.includes("<img src=x"), "scalar HTML was not escaped");
-  assert(!output.includes("<script>"), "item HTML was not escaped");
-  assert(
-    output.includes(escapeHtml(viewModel.supplier.name)),
-    "escaped scalar is missing",
-  );
-  assert(output.includes("<svg"), "trusted QR SVG was not rendered");
-  assert(
-    output.includes('http-equiv="Content-Security-Policy"'),
-    "rendered invoice has no defense-in-depth CSP",
-  );
-});
-
-Deno.test("template renderer drops unsafe QR SVG", async () => {
-  const viewModel = await createPreviewInvoiceViewModel();
-  viewModel.payment.qrSvg = '<svg onload="alert(1)"></svg>';
-  const output = renderInvoiceTemplate("{{payment.qr}}", "", viewModel);
-  assert(!output.includes("onload"), "unsafe QR SVG was rendered");
-});
 
 Deno.test("template validation rejects JavaScript and unknown placeholders", () => {
   const invalidHtml = [

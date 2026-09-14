@@ -1,5 +1,4 @@
 import type { InvoiceTemplateInput } from "@/domain/invoices/template_types.ts";
-import { TEMPLATE_PLACEHOLDERS } from "@/domain/invoices/template_types.ts";
 
 export interface InvoiceTemplateFormProps {
   values: InvoiceTemplateInput;
@@ -21,10 +20,10 @@ export const EMPTY_INVOICE_TEMPLATE: InvoiceTemplateInput = {
   <strong>Celkem: {{invoice.total}} {{invoice.currency}}</strong>
   <div>{{payment.qr}}</div>
 </main>`,
-  css: `@page { size: A4; margin: 15mm; }
-body { font-family: Arial, sans-serif; color: #18211c; }
-.invoice { width: 100%; }
-table { width: 100%; border-collapse: collapse; }`,
+  css: `:root {
+  --pdf-primary: #183e2a;
+  --pdf-accent: #277a4c;
+}`,
 };
 
 export function invoiceTemplateInputFromForm(
@@ -74,21 +73,9 @@ export default function InvoiceTemplateForm(props: InvoiceTemplateFormProps) {
           />
         </label>
       </div>
+      <input type="hidden" name="html" value={props.values.html} />
       <label class="block">
-        <span class="mb-2 block text-sm font-medium">HTML</span>
-        <textarea
-          name="html"
-          rows={20}
-          maxlength={100000}
-          required
-          spellcheck={false}
-          class={`${inputClass} font-mono text-xs leading-5`}
-        >
-          {props.values.html}
-        </textarea>
-      </label>
-      <label class="block">
-        <span class="mb-2 block text-sm font-medium">CSS</span>
+        <span class="mb-2 block text-sm font-medium">Vzhled PDF</span>
         <textarea
           name="css"
           rows={16}
@@ -99,21 +86,12 @@ export default function InvoiceTemplateForm(props: InvoiceTemplateFormProps) {
           {props.values.css}
         </textarea>
       </label>
-      <details class="rounded-xl border border-[#dce2dc] bg-[#f7f9f7] p-4">
-        <summary class="cursor-pointer text-sm font-semibold">
-          Podporované placeholders
-        </summary>
-        <div class="mt-3 flex flex-wrap gap-2">
-          {TEMPLATE_PLACEHOLDERS.map((placeholder) => (
-            <code class="rounded bg-white px-2 py-1 text-xs text-[#3c4940]">
-              {`{{${placeholder}}}`}
-            </code>
-          ))}
-        </div>
-      </details>
       <p class="text-sm text-[#667169]">
-        Každé uložení existující šablony vytvoří novou neměnnou verzi.
-        JavaScript a externí zdroje nejsou povolené.
+        PDF má pevný bezpečný layout. Z CSS se používají pouze šestiznakové HEX
+        proměnné <code>--pdf-primary</code> a{" "}
+        <code>--pdf-accent</code>; HTML je automaticky zachované kvůli
+        kompatibilitě se stávajícími verzemi. Každé uložení vytvoří novou
+        neměnnou verzi.
       </p>
       <button
         type="submit"

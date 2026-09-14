@@ -1,7 +1,5 @@
 import { closeDb, getDb } from "@/database/client.ts";
 import { migrate } from "@/database/migrate.ts";
-import { hashPassword } from "@/domain/auth/password.ts";
-import { PostgresAuthRepository } from "@/repositories/auth_repository.ts";
 import { PostgresBankAccountRepository } from "@/repositories/bank_account_repository.ts";
 import { PostgresBankConnectionRepository } from "@/repositories/bank_connection_repository.ts";
 import { PostgresBankTransactionRepository } from "@/repositories/bank_transaction_repository.ts";
@@ -18,7 +16,11 @@ import { PostgresInvoiceDocumentRepository } from "@/repositories/invoice_docume
 import { PostgresInvoicePaymentRepository } from "@/repositories/invoice_payment_repository.ts";
 import { PostgresOrganizationRepository } from "@/repositories/organization_repository.ts";
 import { PostgresOrganizationSettingsRepository } from "@/repositories/organization_settings_repository.ts";
-import { AuthService } from "@/services/auth_service.ts";
+import {
+  closeBetterAuthDatabase,
+  getAuth,
+  SESSION_COOKIE_NAME,
+} from "@/services/better_auth.ts";
 import { BankConnectionService } from "@/services/banking/bank_connection_service.ts";
 import { AesGcmCredentialCipher } from "@/services/banking/credential_cipher.ts";
 import { BankSyncService } from "@/services/banking/bank_sync_service.ts";
@@ -41,11 +43,15 @@ import {
   InvoiceDocumentService,
   readVerifiedInvoiceDocument,
 } from "@/services/invoice_document_service.ts";
-import type { PdfRenderer } from "@/services/pdf/chromium_pdf_renderer.ts";
+import type { PdfRenderer } from "@/services/pdf/pdf_lib_renderer.ts";
 import type {
   ObjectStorage,
   StoredObject,
 } from "@/services/storage/object_storage.ts";
+import {
+  LEGACY_TEST_PASSWORD_HASH,
+  TestAuthRepository,
+} from "@/tests/auth_test_helper.ts";
 
 const testDatabaseUrl = Deno.env.get("TEST_DATABASE_URL");
 
@@ -73,8 +79,8 @@ class MemoryObjectStorage implements ObjectStorage {
 }
 
 class HtmlEchoPdfRenderer implements PdfRenderer {
-  render(html: string): Promise<Uint8Array> {
-    return Promise.resolve(new TextEncoder().encode(`%PDF-1.7\n${html}`));
+  render(): Promise<Uint8Array> {
+    return Promise.resolve(new TextEncoder().encode("%PDF-1.7\ntest"));
   }
 }
 
@@ -84,12 +90,13 @@ Deno.test({
   sanitizeOps: false,
   sanitizeResources: false,
   async fn() {
+    const previousAppEnv = Deno.env.get("APP_ENV");
     Deno.env.set("DATABASE_URL", testDatabaseUrl!);
+    Deno.env.set("APP_ENV", "test");
     await migrate();
 
     const sql = getDb();
-    const repository = new PostgresAuthRepository(sql);
-    const service = new AuthService(repository);
+    const repository = new TestAuthRepository(sql);
     const userId = crypto.randomUUID();
     const email = `auth-${userId}@example.test`;
 
@@ -98,28 +105,51 @@ Deno.test({
         id: userId,
         email,
         displayName: "Integration Test",
-        passwordHash: await hashPassword("integration-password", 10_000),
+        passwordHash: LEGACY_TEST_PASSWORD_HASH,
       });
 
-      const session = await service.authenticate(email, "integration-password");
-      assert(session !== null, "login failed");
+      const signInResponse = await getAuth().api.signInEmail({
+        body: { email, password: "integration-password" },
+        headers: new Headers({ origin: "http://fakturomat.test" }),
+        asResponse: true,
+      });
+      assert(signInResponse.ok, "login failed");
+      const sessionCookie = signInResponse.headers.getSetCookie().find((
+        value,
+      ) => value.startsWith(`${SESSION_COOKIE_NAME}=`))?.split(";", 1)[0];
       assert(
-        session.token.length === 43,
-        "raw session token has an unexpected shape",
+        sessionCookie !== undefined,
+        "login did not create a session cookie",
       );
 
-      const currentUser = await repository.findSessionUser(session.tokenHash);
+      const headers = new Headers({ cookie: sessionCookie });
+      const currentSession = await getAuth().api.getSession({ headers });
       assert(
-        currentUser?.id === userId,
+        currentSession?.user.id === userId,
         "active session did not resolve its user",
       );
 
-      await repository.revokeSession(session.tokenHash);
-      const revokedUser = await repository.findSessionUser(session.tokenHash);
-      assert(revokedUser === null, "revoked session remained valid");
+      const signOutResponse = await getAuth().api.signOut({
+        headers,
+        asResponse: true,
+      });
+      assert(signOutResponse.ok, "logout failed");
+      const revokedSession = await getAuth().api.getSession({ headers });
+      assert(revokedSession === null, "revoked session remained valid");
+
+      await sql`UPDATE users SET is_active = false WHERE id = ${userId}`;
+      const inactiveSignIn = await getAuth().api.signInEmail({
+        body: { email, password: "integration-password" },
+        headers: new Headers({ origin: "http://fakturomat.test" }),
+        asResponse: true,
+      });
+      assert(!inactiveSignIn.ok, "inactive user was allowed to sign in");
     } finally {
       await sql`DELETE FROM users WHERE id = ${userId}`;
+      await closeBetterAuthDatabase();
       await closeDb();
+      if (previousAppEnv === undefined) Deno.env.delete("APP_ENV");
+      else Deno.env.set("APP_ENV", previousAppEnv);
     }
   },
 });
@@ -134,7 +164,7 @@ Deno.test({
     await migrate();
 
     const sql = getDb();
-    const authRepository = new PostgresAuthRepository(sql);
+    const authRepository = new TestAuthRepository(sql);
     const organizationRepository = new PostgresOrganizationRepository(sql);
     const contactRepository = new PostgresContactRepository(sql);
     const categoryRepository = new PostgresExpenseCategoryRepository(sql);
@@ -156,7 +186,7 @@ Deno.test({
     const otherOrganizationId = crypto.randomUUID();
     const contactId = crypto.randomUUID();
     const otherContactId = crypto.randomUUID();
-    const passwordHash = await hashPassword("integration-password", 10_000);
+    const passwordHash = LEGACY_TEST_PASSWORD_HASH;
 
     try {
       await authRepository.createUser({
@@ -672,7 +702,7 @@ Deno.test({
     await migrate();
 
     const sql = getDb();
-    const authRepository = new PostgresAuthRepository(sql);
+    const authRepository = new TestAuthRepository(sql);
     const organizationRepository = new PostgresOrganizationRepository(sql);
     const contactRepository = new PostgresContactRepository(sql);
     const ownerId = crypto.randomUUID();
@@ -680,7 +710,7 @@ Deno.test({
     const organizationId = crypto.randomUUID();
     const otherOrganizationId = crypto.randomUUID();
     const contactId = crypto.randomUUID();
-    const passwordHash = await hashPassword("integration-password", 10_000);
+    const passwordHash = LEGACY_TEST_PASSWORD_HASH;
 
     try {
       await authRepository.createUser({
@@ -878,7 +908,7 @@ Deno.test({
     await migrate();
 
     const sql = getDb();
-    const authRepository = new PostgresAuthRepository(sql);
+    const authRepository = new TestAuthRepository(sql);
     const organizationRepository = new PostgresOrganizationRepository(sql);
     const settingsRepository = new PostgresOrganizationSettingsRepository(sql);
     const bankAccountRepository = new PostgresBankAccountRepository(sql);
@@ -894,7 +924,7 @@ Deno.test({
     const ownerId = crypto.randomUUID();
     const outsiderId = crypto.randomUUID();
     const organizationId = crypto.randomUUID();
-    const passwordHash = await hashPassword("integration-password", 10_000);
+    const passwordHash = LEGACY_TEST_PASSWORD_HASH;
 
     try {
       await authRepository.createUser({
@@ -1333,7 +1363,7 @@ Deno.test({
     await migrate();
 
     const sql = getDb();
-    const authRepository = new PostgresAuthRepository(sql);
+    const authRepository = new TestAuthRepository(sql);
     const repository = new PostgresInvoiceTemplateRepository(sql);
     const service = new InvoiceTemplateService(repository);
     const organizationRepository = new PostgresOrganizationRepository(sql);
@@ -1347,7 +1377,7 @@ Deno.test({
         id: userId,
         email: `template-${userId}@example.test`,
         displayName: "Template editor",
-        passwordHash: await hashPassword("integration-password", 10_000),
+        passwordHash: LEGACY_TEST_PASSWORD_HASH,
       });
       await organizationRepository.createWithOwner({
         id: firstOrganizationId,
@@ -1537,7 +1567,7 @@ Deno.test({
     await migrate();
 
     const sql = getDb();
-    const authRepository = new PostgresAuthRepository(sql);
+    const authRepository = new TestAuthRepository(sql);
     const organizationRepository = new PostgresOrganizationRepository(sql);
     const contactRepository = new PostgresContactRepository(sql);
     const invoiceRepository = new PostgresInvoiceRepository(sql);
@@ -1549,7 +1579,7 @@ Deno.test({
     const otherOrganizationId = crypto.randomUUID();
     const contactId = crypto.randomUUID();
     const otherContactId = crypto.randomUUID();
-    const passwordHash = await hashPassword("integration-password", 10_000);
+    const passwordHash = LEGACY_TEST_PASSWORD_HASH;
 
     try {
       await authRepository.createUser({
@@ -1745,7 +1775,7 @@ Deno.test({
     await migrate();
 
     const sql = getDb();
-    const authRepository = new PostgresAuthRepository(sql);
+    const authRepository = new TestAuthRepository(sql);
     const organizationRepository = new PostgresOrganizationRepository(sql);
     const settingsRepository = new PostgresOrganizationSettingsRepository(sql);
     const contactRepository = new PostgresContactRepository(sql);
@@ -1773,7 +1803,7 @@ Deno.test({
     const organizationId = crypto.randomUUID();
     const contactId = crypto.randomUUID();
     let templateId: string | null = null;
-    const passwordHash = await hashPassword("integration-password", 10_000);
+    const passwordHash = LEGACY_TEST_PASSWORD_HASH;
 
     try {
       await authRepository.createUser({
@@ -2258,7 +2288,7 @@ Deno.test({
       const failingService = new InvoiceService(
         invoiceRepository,
         new InvoiceDocumentService({
-          render: () => Promise.reject(new Error("simulated Chromium failure")),
+          render: () => Promise.reject(new Error("simulated PDF failure")),
         }, documentStorage),
       );
       assert(
@@ -2420,7 +2450,7 @@ Deno.test({
         "database allowed invoice PDF metadata deletion",
       );
     } finally {
-      await sql`DELETE FROM organizations WHERE id = ${organizationId}`;
+      await sql`DELETE FROM invoices WHERE organization_id = ${organizationId}`;
       if (templateId !== null) {
         await sql`
           UPDATE invoice_templates SET current_version_id = NULL
@@ -2432,6 +2462,7 @@ Deno.test({
         `;
         await sql`DELETE FROM invoice_templates WHERE id = ${templateId}`;
       }
+      await sql`DELETE FROM organizations WHERE id = ${organizationId}`;
       await sql`DELETE FROM users WHERE id IN (${ownerId}, ${outsiderId})`;
       await closeDb();
     }

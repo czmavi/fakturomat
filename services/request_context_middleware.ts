@@ -23,7 +23,6 @@ export const requestContextMiddleware = define.middleware(async (ctx) => {
   const authState = await loadAuthState(ctx.req);
 
   ctx.state.user = authState.user;
-  ctx.state.sessionTokenHash = authState.sessionTokenHash;
   ctx.state.csrfToken = csrfState.token;
   ctx.state.organizations = [];
   ctx.state.currentOrganization = null;

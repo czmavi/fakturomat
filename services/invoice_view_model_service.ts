@@ -2,6 +2,7 @@ import type { InvoiceViewModel } from "@/domain/invoices/invoice_view_model.ts";
 import type { Invoice } from "@/domain/invoices/types.ts";
 import { formatMoneyForDisplay } from "@/domain/invoices/money.ts";
 import {
+  createQrPaymentMatrix,
   generateQrPaymentSvg,
   resolvePaymentIban,
 } from "@/services/qr_payment_service.ts";
@@ -49,14 +50,16 @@ export async function createInvoiceViewModel(
     );
   }
   const iban = resolvePaymentIban(invoice.bankAccountSnapshot);
-  const qrSvg = await generateQrPaymentSvg({
+  const qrInput = {
     bankAccount: invoice.bankAccountSnapshot,
     amount: invoice.total,
     currency: invoice.currency,
     variableSymbol: invoice.variableSymbol,
     dueDate: invoice.dueDate,
     message: `FAKTURA ${invoice.number}`,
-  });
+  };
+  const qrSvg = await generateQrPaymentSvg(qrInput);
+  const qrMatrix = createQrPaymentMatrix(qrInput);
   return {
     supplier: {
       name: invoice.supplierSnapshot.officialName,
@@ -95,6 +98,7 @@ export async function createInvoiceViewModel(
       account: paymentAccount(invoice),
       iban,
       qrSvg,
+      qrMatrix,
     },
   };
 }

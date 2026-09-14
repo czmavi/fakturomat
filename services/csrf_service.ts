@@ -1,4 +1,4 @@
-import { timingSafeEqual } from "@/domain/auth/password.ts";
+import { timingSafeEqual } from "@/domain/auth/timing_safe_equal.ts";
 import { createCookie, getCookie } from "@/services/cookie_service.ts";
 
 export const CSRF_COOKIE_NAME = "fakturomat_csrf";

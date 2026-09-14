@@ -75,7 +75,7 @@ export default define.page<typeof handler>(({ data, state }) => (
 
       <section class="mt-8 overflow-hidden rounded-2xl border border-[#dce2dc] bg-white">
         <div class="flex items-center justify-between border-b border-[#e3e7e3] px-5 py-4">
-          <h2 class="font-semibold">Preview s testovacími daty</h2>
+          <h2 class="font-semibold">PDF náhled s testovacími daty</h2>
           <a
             href={`/templates/${data.template.id}/versions/${data.template.currentVersionId}/preview?organizationId=${
               state.currentOrganization!.id

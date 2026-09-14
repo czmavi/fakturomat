@@ -3,8 +3,8 @@
 Datum auditu: 10. září 2026\
 Auditovaná revize: `4a1bce2` plus lokální necommitnuté změny přítomné v
 pracovním stromu\
-Aktualizace nápravy: F-01 napraveno a F-03 částečně napraveno v lokálních
-změnách dne 10. září 2026\
+Aktualizace nápravy: F-01 a F-08 napraveny, F-03 částečně napraveno v lokálních
+změnách k 14. září 2026\
 Rozsah: aplikační kód, routy, repository vrstva, migrace, konfigurace, uploady,
 generování PDF, autentizace, autorizace a uzamčené závislosti
 
@@ -14,17 +14,17 @@ Původní audit nalezl 2 nálezy s vysokou, 4 se střední a 3 s nízkou severit
 Kritický nález nebyl identifikován. F-01 byl následně napraven; otevřený zůstává
 1 nález s vysokou severitou.
 
-| ID   | Nález                                                                                  | Severita | Obtížnost nápravy |
-| ---- | -------------------------------------------------------------------------------------- | -------: | ----------------: |
-| F-01 | **Napraveno:** uživatel mohl změnit globální fakturační šablonu pro všechny tenanty    |   Vysoká |           Střední |
-| F-02 | Limit těla požadavku lze obejít chybějícím `Content-Length`                            |   Vysoká |           Střední |
-| F-03 | **Částečně napraveno:** přihlášení nemá aplikační throttling                           |  Střední |           Střední |
-| F-04 | Role `OWNER` a `MEMBER` nejsou vynucovány u citlivých operací                          |  Střední |            Vysoká |
-| F-05 | Produkční proces je spouštěn s neomezenými Deno oprávněními `-A`                       |  Střední |           Střední |
-| F-06 | Bezpečné cookies a HSTS se při chybné konfiguraci vypnou „fail-open“                   |  Střední |             Nízká |
-| F-07 | Uploady ověřují pouze deklarovaný MIME typ a několik úvodních bajtů                    |    Nízká |           Střední |
-| F-08 | HTML šablony jsou filtrovány regulárními výrazy, které neodpovídají parseru prohlížeče |    Nízká |           Střední |
-| F-09 | Chybí bezpečnostní auditní stopa citlivých akcí                                        |    Nízká |           Střední |
+| ID   | Nález                                                                               | Severita | Obtížnost nápravy |
+| ---- | ----------------------------------------------------------------------------------- | -------: | ----------------: |
+| F-01 | **Napraveno:** uživatel mohl změnit globální fakturační šablonu pro všechny tenanty |   Vysoká |           Střední |
+| F-02 | Limit těla požadavku lze obejít chybějícím `Content-Length`                         |   Vysoká |           Střední |
+| F-03 | **Částečně napraveno:** přihlášení nemá aplikační throttling                        |  Střední |           Střední |
+| F-04 | Role `OWNER` a `MEMBER` nejsou vynucovány u citlivých operací                       |  Střední |            Vysoká |
+| F-05 | Produkční proces je spouštěn s neomezenými Deno oprávněními `-A`                    |  Střední |           Střední |
+| F-06 | Bezpečné cookies a HSTS se při chybné konfiguraci vypnou „fail-open“                |  Střední |             Nízká |
+| F-07 | Uploady ověřují pouze deklarovaný MIME typ a několik úvodních bajtů                 |    Nízká |           Střední |
+| F-08 | **Napraveno:** HTML šablony byly filtrovány regexy a interpretovány prohlížečem     |    Nízká |           Střední |
+| F-09 | Chybí bezpečnostní auditní stopa citlivých akcí                                     |    Nízká |           Střední |
 
 F-01 původně umožňoval útočníkovi s jakýmkoli platným účtem změnit sdílenou
 šablonu a ovlivnit nově vystavené faktury jiných subjektů. Náprava oddělila
@@ -274,10 +274,9 @@ budoucí RCE nebo kompromitované závislosti: útočník může číst všechna
 dostupná OS uživateli, zapisovat mimo storage, komunikovat s libovolnou sítí a
 spouštět další programy.
 
-PDF renderer legitimně potřebuje spustit Chromium
-(`services/pdf/chromium_pdf_renderer.ts:44-70`), ale to nevyžaduje plošné `-A`.
-Je zároveň nutné počítat s tím, že subprocess běží mimo Deno sandbox, a proto
-musí být izolován také operačním systémem.
+PDF renderer už externí proces nespouští; po přechodu na `pdf-lib` proto pro
+generování faktur není oprávnění `--allow-run` potřeba. Plošné `-A` však nadále
+uděluje i ostatní nepotřebná oprávnění a nález zůstává otevřený.
 
 #### Způsob nápravy
 
@@ -288,9 +287,6 @@ musí být izolován také operačním systémem.
   cíle.
 - Nejprve spustit staging s `DENO_AUDIT_PERMISSIONS` a z auditního logu odvodit
   minimální sadu oprávnění.
-- Chromium spouštět v samostatném kontejneru/službě nebo s OS sandboxem,
-  omezenou sítí, read-only root filesystemem, privátním `/tmp`, limitem
-  paměti/CPU a neprivilegovaným uživatelem.
 - Runtime používat s uzamčenými a předem staženými závislostmi.
 
 Deno uvádí, že `--allow-all` bezpečnostní sandbox zcela vypíná, a doporučuje
@@ -371,7 +367,7 @@ OWASP upozorňuje, že kontrola signatury nesmí být používána samostatně a
 doporučuje více vrstev včetně parseru, antiviru/CDR a limitů:
 [File Upload Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/File_Upload_Cheat_Sheet.html).
 
-### F-08: HTML šablony jsou filtrovány regulárními výrazy, které neodpovídají parseru prohlížeče
+### F-08: Napraveno – HTML šablony byly filtrovány regulárními výrazy
 
 **Severita:** Nízká\
 **Obtížnost nápravy:** Střední\
@@ -380,9 +376,10 @@ Generation (obrana do hloubky)
 
 #### Vysvětlení
 
-Validátor hledá elementy a nebezpečné atributy samostatnými regulárními výrazy
-(`services/invoice_template_service.ts:80-105`). HTML parser však přijímá i jiné
-oddělovače atributů. Auditní test potvrdil, že validátor akceptuje například:
+Původní validátor hledal elementy a nebezpečné atributy samostatnými regulárními
+výrazy (`services/invoice_template_service.ts:80-105`). HTML parser však přijímá
+i jiné oddělovače atributů. Auditní test potvrdil, že validátor akceptuje
+například:
 
 ```html
 <div /onload=alert(1)>x</div>
@@ -394,15 +391,17 @@ oddělovače atributů. Auditní test potvrdil, že validátor akceptuje napří
 ```
 
 První vstup prohlížeč interpretuje jako event handler a druhý využívá historický
-síťový atribut, který není na denylistu. V současném kódu brání praktickému
+síťový atribut, který není na denylistu. V původním kódu bránily praktickému
 spuštění skriptu a načtení sítě silná CSP v HTTP hlavičce, další CSP ve
-výsledném HTML a sandboxovaný iframe (`services/security_headers.ts:14-26`,
-`routes/templates/[templateId]/index.tsx:68-83`). Proto je aktuální severita
-nízká. Validátor ale neplní deklarovanou vlastnost a jediná budoucí regrese CSP
-by z této chyby mohla udělat stored XSS nebo únik lokálních dat z Chromium
-rendereru.
+výsledném HTML a sandboxovaný iframe. Proto byla původní severita nízká.
 
-#### Způsob nápravy
+Náprava ze 14. září 2026 odstranila HTML i prohlížeč z renderovací cesty.
+`PdfLibRenderer` kreslí pevný layout přímo pomocí `pdf-lib` a ze šablony čte jen
+dvojici striktně parsovaných HEX barev. Náhled vrací stejný PDF dokument.
+Uložené HTML zůstalo kvůli kompatibilitě historických verzí, ale aplikace je
+nikde neinterpretuje, takže uvedené parserové varianty už nemají XSS sink.
+
+#### Další doporučení
 
 - Nahradit regexový filtr standardním HTML parserem a zavedenou sanitizační
   knihovnou.
@@ -411,7 +410,8 @@ rendereru.
   tabulkové atributy.
 - Sanitizovat parsed DOM a následně jej znovu serializovat; nepoužívat blacklist
   URL nebo event atributů.
-- Zachovat současnou CSP a sandbox jako nezávislou obrannou vrstvu.
+- Pokud se někdy vrátí HTML preview nebo HTML-to-PDF renderer, považovat
+  parserovou sanitizaci a izolaci za release blocker.
 - Přidat mutation-XSS corpus a regresní testy pro `/`, řídicí znaky, entity,
   chybně vnořené tagy, historické URL atributy a parser repair.
 
@@ -471,8 +471,8 @@ fungovaly:
   kořenový adresář;
 - přílohy a PDF mají kontrolu velikosti a SHA-256 při čtení, citlivé odpovědi
   používají `private, no-store`, `nosniff` a přísnou CSP;
-- hodnoty faktur vstupující do HTML šablony jsou escapované, preview běží v
-  sandbox iframe a PDF HTML zakazuje skript i síťové zdroje pomocí CSP;
+- fakturační PDF i náhled vznikají přímo přes `pdf-lib`; uložené HTML se
+  neinterpretuje a renderer nespouští proces ani síťové požadavky;
 - aktuální `deno.lock` neměl podle `deno audit` v době auditu známou
   zranitelnost;
 - nebyly nalezeny hard-coded produkční secrets ani běžné formáty privátních

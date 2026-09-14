@@ -16,8 +16,11 @@ aplikace; není určený k veřejné registraci ani jako účetní systém.
 
 ### Přihlášení a sessions
 
-- Hesla používají PBKDF2-HMAC-SHA-256, náhodnou sůl a 600 000 iterací.
-- V databázi je pouze SHA-256 hash náhodného 256bitového session tokenu.
+- Účty, přihlašování, cookies a sessions spravuje Better Auth. Nová hesla
+  používají jeho `scrypt`; migrované PBKDF2 hashe se ověřují pouze kvůli
+  zachování přístupu stávajících uživatelů.
+- Session cookie obsahuje Better Authem podepsaný neprůhledný identifikátor;
+  serverovou session lze jednotlivě revokovat.
 - Session má pevnou sedmidenní platnost, lze ji revokovat a deaktivovaný účet ji
   nemůže použít.
 - Session cookie je `HttpOnly`, `SameSite=Lax` a v produkci `Secure`.
@@ -36,19 +39,18 @@ aplikace; není určený k veřejné registraci ani jako účetní systém.
 - Triggery plateb kontrolují organization scope, směr pohybu, měnu a součet
   alokací vůči bankovní transakci i cílovému dokladu.
 
-### HTML, šablony a HTTP
+### PDF, šablony a HTTP
 
 - Preact standardně escapuje uživatelské hodnoty v SSR stránkách.
-- Fakturační renderer pracuje pouze s explicitním view modelem a každou skalární
-  hodnotu escapuje.
-- Editovatelné šablony používají allowlist bezpečných HTML elementů, nepovolují
-  JavaScript, inline atribut `style`, zdrojové atributy ani CSS konstrukce pro
-  síťový či lokální přístup.
-- Preview běží v sandboxovaném iframe. Vykreslený HTML dokument má navíc vlastní
-  CSP použitou také při generování PDF.
+- Fakturační renderer kreslí přes `pdf-lib` pouze data z explicitního view
+  modelu. Neinterpretuje HTML, nespouští JavaScript ani nenačítá síťové zdroje.
+- Z verzované šablony používá jen barvy `--pdf-primary` a `--pdf-accent` ve
+  formátu šestiznakového HEX. Uložené HTML je zachováno pouze kvůli
+  kompatibilitě a není součástí renderovací cesty.
+- Preview vrací stejný typ PDF jako vystavení a je dostupné jen členům subjektu.
 - Dynamické odpovědi dostávají CSP, zákaz MIME sniffingu, `no-referrer`, COOP,
   CORP, Permissions Policy a zákaz framingu. Produkce přidává HSTS.
-- Citlivé HTML, PDF, QR, loga a přílohy používají
+- Citlivé PDF, QR, loga a přílohy používají
   `Cache-Control: private,
   no-store`. Přílohy a dokumenty mají vlastní
   přísnější sandbox CSP.
@@ -67,8 +69,9 @@ aplikace; není určený k veřejné registraci ani jako účetní systém.
 
 ## Zbytková rizika a provozní požadavky
 
-- Aplikace zatím nemá rate limiting přihlášení. Reverzní proxy musí omezit počet
-  pokusů a současně nastavit absolutní limit těla i pro chunked přenos.
+- Better Auth omezuje frekvenci auth endpointů v paměti instance. Reverzní proxy
+  musí navíc omezit počet pokusů napříč instancemi a nastavit absolutní limit
+  těla i pro chunked přenos.
 - Chybí vícefaktorové přihlášení, obnova hesla, správa aktivních sessions a
   bezpečnostní audit log.
 - Globální šablony jsou databázově neměnné; změna uživatele vytvoří tenantovou

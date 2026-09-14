@@ -27,6 +27,28 @@ export function getDatabaseMaxConnections(): number {
   return value;
 }
 
+export function getBetterAuthSecret(): string {
+  const value = Deno.env.get("BETTER_AUTH_SECRET")?.trim();
+  if (value) return value;
+  if (getAppEnvironment() === "test") {
+    return "fakturomat-test-secret-at-least-32-characters";
+  }
+  throw new Error("Missing required environment variable BETTER_AUTH_SECRET");
+}
+
+export function getBetterAuthUrl(): string {
+  const value = Deno.env.get("BETTER_AUTH_URL")?.trim();
+  if (value) {
+    const url = new URL(value);
+    if (url.pathname !== "/" || url.search || url.hash) {
+      throw new Error("BETTER_AUTH_URL must be an origin without a path");
+    }
+    return url.origin;
+  }
+  if (getAppEnvironment() === "test") return "http://fakturomat.test";
+  throw new Error("Missing required environment variable BETTER_AUTH_URL");
+}
+
 export function requireBankCredentialsEncryptionKey(): Uint8Array {
   const encoded = Deno.env.get("BANK_CREDENTIALS_ENCRYPTION_KEY")?.trim();
   if (!encoded) {

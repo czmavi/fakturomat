@@ -6,8 +6,7 @@ import type {
 import type { Invoice } from "@/domain/invoices/types.ts";
 import type { InvoiceTemplateVersion } from "@/domain/invoices/template_types.ts";
 import { createInvoiceViewModel } from "@/services/invoice_view_model_service.ts";
-import { renderInvoiceTemplate } from "@/services/invoice_template_renderer.ts";
-import type { PdfRenderer } from "@/services/pdf/chromium_pdf_renderer.ts";
+import type { PdfRenderer } from "@/services/pdf/pdf_lib_renderer.ts";
 import type { ObjectStorage } from "@/services/storage/object_storage.ts";
 import { sha256Hex } from "@/services/storage/integrity.ts";
 export { sha256Hex } from "@/services/storage/integrity.ts";
@@ -29,12 +28,7 @@ export class InvoiceDocumentService implements InvoiceDocumentPreparer {
   ): Promise<PreparedInvoiceDocument> {
     try {
       const viewModel = await createInvoiceViewModel(invoice);
-      const html = renderInvoiceTemplate(
-        templateVersion.html,
-        templateVersion.css,
-        viewModel,
-      );
-      const pdf = await this.renderer.render(html);
+      const pdf = await this.renderer.render(viewModel, templateVersion);
       if (pdf.length === 0 || pdf.length > MAX_INVOICE_PDF_SIZE) {
         throw new Error("PDF has an invalid size");
       }

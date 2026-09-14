@@ -1,13 +1,7 @@
 import { page } from "fresh";
 import { Head } from "fresh/runtime";
 import { define } from "@/utils.ts";
-import {
-  AuthService,
-  SESSION_COOKIE_NAME,
-  SESSION_DURATION_SECONDS,
-} from "@/services/auth_service.ts";
-import { PostgresAuthRepository } from "@/repositories/auth_repository.ts";
-import { createCookie } from "@/services/cookie_service.ts";
+import { getAuth } from "@/services/better_auth.ts";
 import { isValidCsrfToken } from "@/services/csrf_service.ts";
 
 interface LoginData {
@@ -35,23 +29,21 @@ export const handler = define.handlers<LoginData>({
 
     const email = String(form.get("email") ?? "").trim();
     const password = String(form.get("password") ?? "");
-    const service = new AuthService(new PostgresAuthRepository());
-    const identity = await service.authenticate(email, password);
-    if (identity === null) {
+    const authResponse = await getAuth().api.signInEmail({
+      body: { email, password, rememberMe: true },
+      headers: ctx.req.headers,
+      asResponse: true,
+    });
+    if (!authResponse.ok) {
       return page({ error: "Neplatný e-mail nebo heslo.", email }, {
         status: 401,
       });
     }
 
     const response = ctx.redirect("/dashboard", 303);
-    response.headers.append(
-      "Set-Cookie",
-      createCookie(SESSION_COOKIE_NAME, identity.token, {
-        httpOnly: true,
-        maxAge: SESSION_DURATION_SECONDS,
-        sameSite: "Lax",
-      }),
-    );
+    for (const cookie of authResponse.headers.getSetCookie()) {
+      response.headers.append("Set-Cookie", cookie);
+    }
     return response;
   },
 });

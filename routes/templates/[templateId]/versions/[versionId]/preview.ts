@@ -2,7 +2,7 @@ import { define } from "@/utils.ts";
 import { isUuid } from "@/domain/organizations/types.ts";
 import { PostgresInvoiceTemplateRepository } from "@/repositories/invoice_template_repository.ts";
 import { createPreviewInvoiceViewModel } from "@/services/invoice_template_preview.ts";
-import { renderInvoiceTemplate } from "@/services/invoice_template_renderer.ts";
+import { PdfLibRenderer } from "@/services/pdf/pdf_lib_renderer.ts";
 
 export const handler = define.handlers({
   async GET(ctx) {
@@ -21,18 +21,16 @@ export const handler = define.handlers({
     if (version === null) {
       return new Response("Verze nebyla nalezena.", { status: 404 });
     }
-    return new Response(
-      renderInvoiceTemplate(
-        version.html,
-        version.css,
-        await createPreviewInvoiceViewModel(),
-      ),
-      {
-        headers: {
-          "Content-Type": "text/html; charset=utf-8",
-          "Cache-Control": "no-store",
-        },
-      },
+    const pdf = await new PdfLibRenderer().render(
+      await createPreviewInvoiceViewModel(),
+      version,
     );
+    return new Response(pdf as Uint8Array<ArrayBuffer>, {
+      headers: {
+        "Content-Type": "application/pdf",
+        "Content-Disposition": "inline; filename=nahled-faktury.pdf",
+        "Cache-Control": "no-store",
+      },
+    });
   },
 });

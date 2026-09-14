@@ -36,5 +36,9 @@ export interface InvoiceViewModel {
     account: string;
     iban: string;
     qrSvg: string;
+    qrMatrix: {
+      size: number;
+      data: Uint8Array;
+    };
   };
 }

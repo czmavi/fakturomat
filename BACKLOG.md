@@ -19,7 +19,7 @@ rozsah a bezpečnostní dopady.
 - **Správa globálních šablon:** přidat instalační administrátorské workflow;
   dnes jsou globální předlohy neměnné a aktualizují se pouze migrací.
 - **Health/readiness endpointy a strukturované logy:** zvlášť dostupnost
-  procesu, databáze, storage a Chromium bez zveřejnění citlivých detailů.
+  procesu, databáze a storage bez zveřejnění citlivých detailů.
 
 ## P1 — správa uživatelů a organizací
 
