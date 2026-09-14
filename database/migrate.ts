@@ -28,14 +28,15 @@ export async function readMigrations(
 export async function migrate(): Promise<string[]> {
   const sql = getDb();
   const migrations = await readMigrations();
+  const connection = await sql.reserve();
 
-  return await sql.begin(async (transaction) => {
-    await transaction`SELECT pg_advisory_xact_lock(${MIGRATION_LOCK_ID})`;
-    const [migrationTable] = await transaction<{ exists: boolean }[]>`
+  try {
+    await connection`SELECT pg_advisory_lock(${MIGRATION_LOCK_ID})`;
+    const [migrationTable] = await connection<{ exists: boolean }[]>`
       SELECT to_regclass('schema_migrations') IS NOT NULL AS exists
     `;
     if (!migrationTable.exists) {
-      await transaction.unsafe(`
+      await connection.unsafe(`
         CREATE TABLE schema_migrations (
           version text PRIMARY KEY,
           applied_at timestamptz NOT NULL DEFAULT now()
@@ -43,7 +44,7 @@ export async function migrate(): Promise<string[]> {
       `);
     }
 
-    const rows = await transaction<{ version: string }[]>`
+    const rows = await connection<{ version: string }[]>`
       SELECT version FROM schema_migrations
     `;
     const applied = new Set(rows.map((row) => row.version));
@@ -51,15 +52,28 @@ export async function migrate(): Promise<string[]> {
 
     for (const migration of migrations) {
       if (applied.has(migration.version)) continue;
-      await transaction.unsafe(migration.sql);
-      await transaction`
-        INSERT INTO schema_migrations (version) VALUES (${migration.version})
-      `;
+      await connection.unsafe("BEGIN");
+      try {
+        await connection.unsafe(migration.sql);
+        await connection`
+          INSERT INTO schema_migrations (version) VALUES (${migration.version})
+        `;
+        await connection.unsafe("COMMIT");
+      } catch (error) {
+        await connection.unsafe("ROLLBACK");
+        throw error;
+      }
       newlyApplied.push(migration.version);
     }
 
     return newlyApplied;
-  });
+  } finally {
+    try {
+      await connection`SELECT pg_advisory_unlock(${MIGRATION_LOCK_ID})`;
+    } finally {
+      connection.release();
+    }
+  }
 }
 
 if (import.meta.main) {

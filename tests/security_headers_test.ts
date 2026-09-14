@@ -18,6 +18,10 @@ Deno.test("security headers harden regular dynamic responses", () => {
   assert(csp.includes("frame-ancestors 'none'"), "framing was not denied");
   assert(csp.includes("worker-src 'none'"), "workers were not denied");
   assert(
+    !csp.includes("'unsafe-inline'"),
+    "production CSP permits inline content",
+  );
+  assert(
     response.headers.get("Cache-Control") === "private, no-store",
     "authenticated response can be cached",
   );
@@ -28,6 +32,24 @@ Deno.test("security headers harden regular dynamic responses", () => {
   assert(
     response.headers.get("Cross-Origin-Resource-Policy") === "same-origin",
     "cross-origin resource isolation is missing",
+  );
+});
+
+Deno.test("development CSP permits Vite's injected stylesheet", () => {
+  const response = applySecurityHeaders(
+    new Response("page"),
+    new URL("http://localhost:5173/login"),
+    "development",
+  );
+  const csp = response.headers.get("Content-Security-Policy") ?? "";
+  assert(
+    csp.includes("style-src 'self' 'unsafe-inline'"),
+    "development CSP blocks Vite's injected stylesheet",
+  );
+  assert(
+    csp.includes("script-src 'self'") &&
+      !csp.includes("script-src 'unsafe-inline'"),
+    "development CSP unnecessarily permits inline scripts",
   );
 });
 

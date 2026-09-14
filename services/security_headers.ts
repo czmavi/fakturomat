@@ -11,7 +11,10 @@ export function requestContentLengthIsTooLarge(request: Request): boolean {
   return !Number.isSafeInteger(length) || length > MAX_REQUEST_CONTENT_LENGTH;
 }
 
-function contentSecurityPolicy(isTemplatePreview: boolean): string {
+function contentSecurityPolicy(
+  isTemplatePreview: boolean,
+  environment: AppEnvironment,
+): string {
   if (isTemplatePreview) {
     return [
       "default-src 'none'",
@@ -35,7 +38,9 @@ function contentSecurityPolicy(isTemplatePreview: boolean): string {
     "img-src 'self' data:",
     "object-src 'none'",
     "script-src 'self'",
-    "style-src 'self'",
+    environment === "development"
+      ? "style-src 'self' 'unsafe-inline'"
+      : "style-src 'self'",
     "worker-src 'none'",
   ].join("; ");
 }
@@ -50,7 +55,7 @@ export function applySecurityHeaders(
   if (!response.headers.has("Content-Security-Policy")) {
     response.headers.set(
       "Content-Security-Policy",
-      contentSecurityPolicy(isTemplatePreview),
+      contentSecurityPolicy(isTemplatePreview, environment),
     );
   }
   if (!response.headers.has("Cache-Control")) {
