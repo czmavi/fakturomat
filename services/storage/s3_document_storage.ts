@@ -27,22 +27,40 @@ export class S3DocumentStorage implements DocumentStorage {
   ) {}
 
   async validateConfiguration(): Promise<void> {
+    let stage = "credentials";
     try {
+      console.info(`S3 startup check: ${stage}`);
       await this.client.config.credentials();
+      stage = "HeadBucket";
+      console.info(`S3 startup check: ${stage}`);
       await this.client.send(new HeadBucketCommand({ Bucket: this.bucket }));
+      stage = "GetPublicAccessBlock";
+      console.info(`S3 startup check: ${stage}`);
       const { PublicAccessBlockConfiguration: block } = await this.client.send(
         new GetPublicAccessBlockCommand({ Bucket: this.bucket }),
       );
+      stage = "BlockPublicAccess settings";
       if (
         !block?.BlockPublicAcls || !block.IgnorePublicAcls ||
         !block.BlockPublicPolicy || !block.RestrictPublicBuckets
       ) {
         throw new Error("Bucket must block all public access");
       }
-    } catch {
-      // Do not expose SDK errors that could contain credentials or request URLs.
+    } catch (error) {
+      // Only expose the stage and numeric HTTP status, never SDK messages,
+      // credentials, request URLs or response bodies.
+      const status = error !== null && typeof error === "object" &&
+          "$metadata" in error && error.$metadata !== null &&
+          typeof error.$metadata === "object" &&
+          "httpStatusCode" in error.$metadata
+        ? error.$metadata.httpStatusCode
+        : undefined;
+      const http = typeof status === "number" && Number.isInteger(status) &&
+          status >= 100 && status <= 599
+        ? ` (HTTP ${status})`
+        : "";
       throw new DocumentStorageConfigurationError(
-        "S3 document storage configuration failed: verify credentials, region, bucket access and all four bucket Block Public Access settings.",
+        `S3 document storage configuration failed at ${stage}${http}: verify credentials, region, bucket access and all four bucket Block Public Access settings.`,
       );
     }
   }

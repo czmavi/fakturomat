@@ -24,7 +24,7 @@ async function rejects(
     await action();
   } catch (error) {
     assert(error instanceof errorType);
-    return;
+    return error;
   }
   throw new Error("Expected rejection");
 }
@@ -41,6 +41,7 @@ function mockClient(
     invalidCredentials?: boolean;
     unavailable?: boolean;
     publicBucket?: boolean;
+    publicAccessBlockDenied?: boolean;
   } = {},
 ) {
   const calls: unknown[] = [];
@@ -61,6 +62,16 @@ function mockClient(
     send: (command: unknown) => {
       calls.push(command);
       if (options.unavailable) return Promise.reject(new Error("Unavailable"));
+      if (
+        options.publicAccessBlockDenied &&
+        command instanceof GetPublicAccessBlockCommand
+      ) {
+        return Promise.reject(
+          Object.assign(new Error("secret must not escape"), {
+            $metadata: { httpStatusCode: 403 },
+          }),
+        );
+      }
       return Promise.resolve(
         command instanceof GetPublicAccessBlockCommand
           ? {
@@ -117,11 +128,12 @@ for (
     "invalidCredentials",
     "unavailable",
     "publicBucket",
+    "publicAccessBlockDenied",
   ] as const
 ) {
   Deno.test(`document factory rejects ${failure} without local fallback`, async () => {
     const mock = mockClient({ [failure]: true });
-    await rejects(
+    const error = await rejects(
       () =>
         createDocumentStorage(
           (name) =>
@@ -130,6 +142,15 @@ for (
         ),
       DocumentStorageConfigurationError,
     );
+    const expectedStage = {
+      invalidCredentials: "credentials",
+      unavailable: "HeadBucket",
+      publicBucket: "BlockPublicAccess settings",
+      publicAccessBlockDenied: "GetPublicAccessBlock (HTTP 403)",
+    }[failure];
+    assert(error.message.includes(`failed at ${expectedStage}:`));
+    assert(!error.message.includes("secret must not escape"));
+    assert(error.cause === undefined);
   });
 }
 

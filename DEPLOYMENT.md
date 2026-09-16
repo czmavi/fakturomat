@@ -342,3 +342,25 @@ deno task migrate:local --check
 Kontrola provede pouze `SELECT 1`. Pokud Neon hostname v diagnostice souhlasí,
 ale samotná chyba stále uvádí localhost, je třeba ověřit DNS/síťové směrování
 běžícího procesu. Samotná hodnota uložená v dashboardu neprokazuje použitý cíl.
+
+## Chyba 500/502 po úspěšném nasazení
+
+V Deno Deploy otevřete Logs, odstraňte filtr Trace ID a vyberte
+`context:production` a čas posledního pokusu. Logy startu nemusí vzniknout
+uvnitř trace HTTP požadavku. Viz
+[Deno Deploy observability](https://docs.deno.com/deploy/reference/observability/).
+
+Start vypisuje `Application startup: initializing document storage`, při S3
+následují kontroly `credentials`, `HeadBucket` a `GetPublicAccessBlock`.
+Při chybě se vypíše `Application startup failed` s konkrétní fází a případně
+HTTP statusem. Například `GetPublicAccessBlock (HTTP 403)` znamená, že byla
+zamítnuta kontrola nastavení veřejného přístupu; prověřte oprávnění
+`s3:GetBucketPublicAccessBlock`. Diagnostika nevypisuje AWS chybové zprávy,
+credentials ani podepsané URL.
+
+`Document storage: s3` potvrzuje úspěšnou validaci úložiště v dané instanci.
+`Application startup: configured` potvrzuje dokončení konfigurace aplikace,
+nikoliv úspěšné připojení k databázi nebo obsluhu HTTP požadavku. Pokud se
+tyto logy objeví, hledejte další runtime chybu. Pokud není ani první log,
+nelze z toho samotného určit příčinu; ověřte revizi, runtime příkaz a také
+chyby načítání modulů před spuštěním `main.ts`.
