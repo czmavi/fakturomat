@@ -3,7 +3,7 @@
   "tasks": {
     "check": "deno fmt --check . && deno lint . && deno check",
     "test": "deno test -A",
-    "db:migrate": "deno run -A --env-file=.env database/migrate.ts",
+    "migrate": "deno run -A --env-file=.env database/migrate.ts",
     "user:create": "deno run -A --env-file=.env scripts/create_user.ts",
     "dev": "vite",
     "build": "vite build",
