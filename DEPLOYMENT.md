@@ -364,3 +364,22 @@ nikoliv úspěšné připojení k databázi nebo obsluhu HTTP požadavku. Pokud 
 tyto logy objeví, hledejte další runtime chybu. Pokud není ani první log,
 nelze z toho samotného určit příčinu; ověřte revizi, runtime příkaz a také
 chyby načítání modulů před spuštěním `main.ts`.
+
+Pokud build skončí na `S3 startup check: credentials` bez další chyby, může
+jít o cyklus dynamických importů AWS SDK se serverovým modulem, který čeká na
+inicializaci storage přes top-level await. Tento problém byl reprodukován v
+SSR bundlu; zdrojový kód ve stejném prostředí správně odmítl chybějící
+credentials. `vite.config.ts` proto ponechává AWS SDK mimo SSR bundle.
+Runtime potřebuje `deno.json`, `deno.lock` a závislosti nainstalované přes
+`deno install --frozen-lockfile`, stejně jako migrační příkaz.
+
+Regresní kontrola sestavené aplikace:
+
+```sh
+deno task test:startup
+```
+
+Kontrola ověří lokální storage, chybu při chybějících credentials a úspěšný
+start s HTTP credential providerem a privátním S3. Používá syntetické údaje
+a lokální mock server; podprocesy mají čisté prostředí a síť povolenou pouze
+na `127.0.0.1`. Neověřuje skutečnou AWS IAM konfiguraci.
