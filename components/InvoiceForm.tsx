@@ -1,3 +1,4 @@
+import ContactSelect from "@/islands/ContactSelect.tsx";
 import type { BankAccount } from "@/domain/banking/types.ts";
 import { formatBankAccount } from "@/domain/banking/types.ts";
 import type { Contact } from "@/domain/contacts/types.ts";
@@ -19,6 +20,7 @@ export interface InvoiceFormOptions {
 export interface InvoiceFormProps extends InvoiceFormOptions {
   values: InvoiceDraftFormInput;
   csrfToken: string;
+  organizationId: string;
   error: string | null;
   submitLabel: string;
 }
@@ -94,26 +96,17 @@ export default function InvoiceForm(props: InvoiceFormProps) {
       )}
 
       <div class="grid gap-5 sm:grid-cols-2">
-        <label class="sm:col-span-2">
-          <span class="mb-2 block text-sm font-medium">Odběratel</span>
-          <select name="contact_id" class={inputClass} required>
-            <option value="">Vyberte kontakt</option>
-            {props.contacts.map((contact) => (
-              <option
-                value={contact.id}
-                selected={props.values.contactId === contact.id}
-              >
-                {contact.name}
-                {contact.archivedAt ? " · archivovaný" : ""}
-              </option>
-            ))}
-          </select>
-          {props.contacts.length === 0 && (
-            <span class="mt-2 block text-xs text-[#962f25]">
-              Nejdříve vytvořte alespoň jeden kontakt.
-            </span>
-          )}
-        </label>
+        <ContactSelect
+          contacts={props.contacts.map(({ id, name, archivedAt }) => ({
+            id,
+            name,
+            archived: archivedAt !== null,
+          }))}
+          initialValue={props.values.contactId}
+          organizationId={props.organizationId}
+          csrfToken={props.csrfToken}
+          required
+        />
         <label>
           <span class="mb-2 block text-sm font-medium">Datum vystavení</span>
           <input

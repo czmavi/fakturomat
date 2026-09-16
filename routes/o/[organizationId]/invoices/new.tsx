@@ -141,6 +141,7 @@ export default define.page<typeof handler>(({ data, state, params }) => (
         </p>
         <InvoiceForm
           {...data}
+          organizationId={params.organizationId}
           csrfToken={state.csrfToken}
           submitLabel="Uložit koncept"
         />

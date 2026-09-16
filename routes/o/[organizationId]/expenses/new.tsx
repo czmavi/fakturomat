@@ -127,6 +127,7 @@ export default define.page<typeof handler>(({ data, state, params }) => (
         <h1 class="mt-2 text-3xl font-semibold tracking-tight">Nový náklad</h1>
         <ExpenseForm
           {...data}
+          organizationId={params.organizationId}
           csrfToken={state.csrfToken}
           submitLabel="Uložit náklad"
         />

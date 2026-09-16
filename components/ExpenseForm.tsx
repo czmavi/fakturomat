@@ -1,3 +1,4 @@
+import ContactSelect from "@/islands/ContactSelect.tsx";
 import type { Contact } from "@/domain/contacts/types.ts";
 import {
   type Expense,
@@ -14,6 +15,7 @@ export interface ExpenseFormOptions {
 export interface ExpenseFormProps extends ExpenseFormOptions {
   values: ExpenseFormInput;
   csrfToken: string;
+  organizationId: string;
   error: string | null;
   submitLabel: string;
 }
@@ -128,33 +130,17 @@ export default function ExpenseForm(props: ExpenseFormProps) {
             ))}
           </select>
         </label>
-        <label class="sm:col-span-2">
-          <span class="mb-2 block text-sm font-medium">Dodavatel</span>
-          <input
-            name="supplier_name"
-            value={props.values.supplierName}
-            maxlength={200}
-            required
-            class={inputClass}
-          />
-        </label>
-        <label>
-          <span class="mb-2 block text-sm font-medium">
-            Kontakt v adresáři
-          </span>
-          <select name="contact_id" class={inputClass}>
-            <option value="">Bez vazby na kontakt</option>
-            {props.contacts.map((contact) => (
-              <option
-                value={contact.id}
-                selected={props.values.contactId === contact.id}
-              >
-                {contact.name}
-                {contact.archivedAt ? " · archivovaný" : ""}
-              </option>
-            ))}
-          </select>
-        </label>
+        <ContactSelect
+          contacts={props.contacts.map(({ id, name, archivedAt }) => ({
+            id,
+            name,
+            archived: archivedAt !== null,
+          }))}
+          initialValue={props.values.contactId}
+          organizationId={props.organizationId}
+          csrfToken={props.csrfToken}
+          initialSupplierName={props.values.supplierName}
+        />
         <label>
           <span class="mb-2 block text-sm font-medium">Číslo dokladu</span>
           <input

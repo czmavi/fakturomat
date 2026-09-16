@@ -25,11 +25,18 @@ export const handler = define.handlers<PageData>({
   async POST(ctx) {
     const form = await ctx.req.formData();
     const values = contactInputFromForm(form);
+    const wantsJson = ctx.req.headers.get("accept")?.includes(
+      "application/json",
+    );
+    const errorResponse = (error: string, status: number) =>
+      wantsJson
+        ? Response.json({ error }, { status })
+        : page({ values, error }, { status });
     if (!isValidCsrfToken(ctx.state.csrfToken, form.get("csrf_token"))) {
-      return page({
-        values,
-        error: "Platnost formuláře vypršela. Zkuste to znovu.",
-      }, { status: 403 });
+      return errorResponse(
+        "Platnost formuláře vypršela. Zkuste to znovu.",
+        403,
+      );
     }
     try {
       const contact = await new ContactService(new PostgresContactRepository())
@@ -39,7 +46,15 @@ export const handler = define.handlers<PageData>({
           userId: ctx.state.user!.id,
         });
       if (contact === null) {
-        return new Response("Stránka nebyla nalezena.", { status: 404 });
+        return errorResponse("Stránka nebyla nalezena.", 404);
+      }
+      if (wantsJson) {
+        return Response.json({
+          contact: { id: contact.id, name: contact.name },
+        }, {
+          status: 201,
+          headers: { "Cache-Control": "no-store" },
+        });
       }
       return ctx.redirect(
         `/o/${ctx.params.organizationId}/contacts/${contact.id}`,
@@ -47,7 +62,7 @@ export const handler = define.handlers<PageData>({
       );
     } catch (error) {
       if (error instanceof ContactValidationError) {
-        return page({ values, error: error.message }, { status: 422 });
+        return errorResponse(error.message, 422);
       }
       throw error;
     }

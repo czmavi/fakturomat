@@ -124,6 +124,7 @@ export default define.page<typeof handler>(({ data, state, params }) => (
         </h1>
         <InvoiceForm
           {...data}
+          organizationId={params.organizationId}
           csrfToken={state.csrfToken}
           submitLabel="Uložit změny"
         />

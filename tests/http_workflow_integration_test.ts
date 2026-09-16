@@ -330,6 +330,81 @@ Deno.test({
       const contactId = idFromLocation(contactResponse, "contacts");
 
       const outsider = await login(handler, outsiderEmail, password);
+      const createInlineContact = (
+        cookie: string,
+        csrfToken: string,
+        name: string,
+      ) => {
+        const request = formRequest(
+          `/o/${organizationId}/contacts/new`,
+          cookie,
+          new URLSearchParams({
+            csrf_token: csrfToken,
+            type: "COMPANY",
+            name,
+            country: "CZ",
+          }),
+        );
+        request.headers.set("accept", "application/json");
+        return handler(request);
+      };
+      const inlineResponse = await createInlineContact(
+        owner.cookie,
+        owner.csrfToken,
+        "Inline supplier",
+      );
+      assert(inlineResponse.status === 201, "inline contact was not created");
+      const inlineBody = await inlineResponse.json();
+      assert(
+        inlineBody.contact.name === "Inline supplier",
+        "inline response is missing contact name",
+      );
+      assert(
+        (await new PostgresContactRepository(sql).findForUser(
+          organizationId,
+          inlineBody.contact.id,
+          ownerId,
+        ))?.name === "Inline supplier",
+        "inline contact was not persisted in the current organization",
+      );
+      const invalidInline = await createInlineContact(
+        owner.cookie,
+        owner.csrfToken,
+        "X",
+      );
+      assert(
+        invalidInline.status === 422 &&
+          typeof (await invalidInline.json()).error === "string",
+        "inline validation did not return a JSON error",
+      );
+      const missingCsrfInline = await createInlineContact(
+        owner.cookie,
+        "invalid",
+        "Rejected supplier",
+      );
+      assert(
+        missingCsrfInline.status === 403 &&
+          typeof (await missingCsrfInline.json()).error === "string",
+        "inline creation bypassed CSRF validation",
+      );
+      const foreignInline = await createInlineContact(
+        outsider.cookie,
+        outsider.csrfToken,
+        "Foreign supplier",
+      );
+      assert(
+        foreignInline.status === 404,
+        "inline creation bypassed tenant scope",
+      );
+      const rejectedContacts = await sql<{ count: number }[]>`
+        SELECT count(*)::integer AS count FROM contacts
+        WHERE organization_id = ${organizationId}
+          AND name IN ('X', 'Rejected supplier', 'Foreign supplier')
+      `;
+      assert(
+        rejectedContacts[0].count === 0,
+        "rejected inline contact was persisted",
+      );
       const foreignRead = await handler(
         new Request(
           `${ORIGIN}/o/${organizationId}/probe`,

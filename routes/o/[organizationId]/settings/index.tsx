@@ -17,6 +17,7 @@ import {
   OrganizationSettingsValidationError,
 } from "@/services/organization_settings_service.ts";
 import { getObjectStorage } from "@/services/storage/storage_factory.ts";
+import InvoiceTemplateSelect from "@/islands/InvoiceTemplateSelect.tsx";
 
 interface SettingsPageData {
   values: OrganizationSettingsInput;
@@ -402,31 +403,17 @@ export default define.page<typeof handler>(({ data, state, params }) => {
                 class={inputClass}
               />
             </label>
-            <label class="sm:col-span-2">
-              <span class="mb-2 block text-sm font-medium">
-                Výchozí šablona faktury
-              </span>
-              <select
-                name="default_invoice_template_id"
-                class={inputClass}
-                required
-              >
-                {data.templates.filter((template) => template.isActive).map((
-                  template,
-                ) => (
-                  <option
-                    value={template.id}
-                    selected={data.values.defaultInvoiceTemplateId ===
-                      template.id}
-                  >
-                    {template.name} · v{template.currentVersion}
-                  </option>
-                ))}
-              </select>
-              <span class="mt-2 block text-xs text-[#758078]">
-                Použije se jako výchozí při vytvoření nového konceptu.
-              </span>
-            </label>
+            <InvoiceTemplateSelect
+              templates={data.templates.filter((template) => template.isActive)
+                .map(({ id, name, currentVersionId, currentVersion }) => ({
+                  id,
+                  name,
+                  currentVersionId,
+                  currentVersion,
+                }))}
+              initialValue={data.values.defaultInvoiceTemplateId}
+              organizationId={params.organizationId}
+            />
             <label class="sm:col-span-2">
               <span class="mb-2 block text-sm font-medium">
                 Patička faktury
