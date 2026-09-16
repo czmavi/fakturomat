@@ -78,9 +78,15 @@ zálohy, obnovu a smoke test popisuje [DEPLOYMENT.md](DEPLOYMENT.md).
   `FAKTUROMAT_ADMIN_PASSWORD` – pouze pro jednorázový příkaz `user:create`.
 - `TEST_DATABASE_URL` – volitelná izolovaná PostgreSQL databáze pro integrační
   testy. Bez ní se DB integrační test korektně přeskočí.
-- `STORAGE_LOCAL_ROOT` – kořen lokální implementace object storage, výchozí
-  hodnota `./data/storage`. Produkční storage lze později vyměnit za jinou
-  implementaci stejného rozhraní.
+- `STORAGE_LOCAL_ROOT` – lokální úložiště log a příloh nákladů, výchozí
+  `./data/storage`.
+- `LOCAL_STORAGE_PATH` – lokální úložiště PDF faktur, výchozí
+  `./data/documents`.
+- `S3_BUCKET` – privátní bucket pro PDF faktur. Bez této hodnoty se používá
+  disk; s ní je nefunkční S3 konfigurace chybou, nikdy důvodem pro fallback na
+  disk.
+- `S3_REGION`, případně `AWS_REGION` – region S3, v tomto pořadí. Credentials
+  řeší standardní AWS SDK v3 provider chain.
 - `BANK_CREDENTIALS_ENCRYPTION_KEY` – povinný 32bajtový Base64 klíč pro
   aplikační AES-256-GCM šifrování bankovních přihlašovacích údajů.
 
@@ -193,16 +199,27 @@ aplikace IBAN bezpečně odvodí, sestaví kanonický SPAYD payload s částkou,
 variabilním symbolem, splatností a zprávou a vykreslí jej jako SVG pro chráněný
 endpoint a jako ostrou vektorovou matici přímo v PDF.
 
-Při vystavení se z uložených snapshotů sestaví `InvoiceViewModel` a použije se
-konkrétní uzamčená verze šablony. `pdf-lib` vytvoří PDF přímo v procesu, bez
-Chromia, HTML rendereru a síťových požadavků. Českou diakritiku zajišťuje
-vložený DejaVu Sans a QR obrázek je součástí dokumentu. PDF se uloží přes object
-storage abstraction pod náhodným klíčem. Metadata včetně SHA-256 a velikosti
-jsou v tabulce `invoice_documents` a databázový trigger je chrání před změnou
-nebo samostatným smazáním. Vystavení, uložení metadat a změna stavu probíhají v
-jedné transakci; při chybě renderování zůstane faktura konceptem. Download před
-odesláním znovu ověřuje hash i velikost objektu a vždy kontroluje organizaci a
-membership uživatele.
+Při vystavení se v krátké transakci rezervuje číslo a připraví snapshot faktury
+včetně konkrétní verze šablony. `pdf-lib` vytvoří PDF přímo v procesu, bez
+Chromia nebo HTML rendereru. Českou diakritiku zajišťuje vložený DejaVu Sans a
+QR matice je součástí dokumentu. `DocumentStorage` uloží PDF mimo DB transakci
+pod klíčem `invoices/{organizationId}/{invoiceId}/{documentId}.pdf`. Až po
+uploadu další transakce vloží metadata a označí fakturu jako vystavenou; předtím
+znovu ověří membership a nezměněný koncept. Selhání ponechá fakturu konceptem.
+Rezervované číslo se nevrací, takže neúspěšné pokusy mohou zanechat mezery v
+řadě.
+
+`invoice_documents` obsahuje provider, klíč, SHA-256, velikost a volitelné ETag;
+nikdy signed URL ani credentials. Triggery chrání neměnnost dokumentu. Pokud
+upload uspěje a dokončení v DB selže, aplikace vypíše warning s identifikací
+orphaned objektu a nemaže jej.
+
+Stávající endpoint `/o/:organizationId/invoices/:invoiceId/document.pdf` ověří
+uživatele a organization scope. Lokální PDF vrací přímo po kontrole hashe a
+velikosti. Pro S3 vrátí HTTP 302 s novým signed URL na 300 sekund, PDF MIME
+typem a bezpečným názvem `faktura-<číslo>.pdf`. Výchozí zobrazení je inline,
+`?download=1` použije attachment. Odpovědi se necachují. Postup konfigurace, IAM
+oprávnění a testování je v [DOCUMENT_STORAGE.md](DOCUMENT_STORAGE.md).
 
 Náklady jsou vedené jako jednoduchá interní evidence v tabulkách `expenses` a
 `expense_categories`. Kontakt i kategorie jsou volitelné, ale případná vazba je
@@ -217,8 +234,8 @@ celková částka používají přesnou money abstraction. Formulář i detail z
 součty základů a daně; rozdíl oproti celkové částce vyvolá upozornění, ale
 neblokuje uložení ručně opsaných hodnot.
 
-Přílohy nákladů používají stejnou object storage abstraction jako PDF faktur a
-loga. PostgreSQL drží pouze organization-scoped metadata, původní bezpečně
+Přílohy nákladů používají lokální object storage abstraction společně s logy.
+PostgreSQL drží pouze organization-scoped metadata, původní bezpečně
 normalizovaný název, MIME typ, velikost, náhodný storage key a SHA-256. Upload
 má limit 20 MB a povoluje pouze PDF, JPEG a PNG po kontrole binární signatury.
 Zobrazení i stažení před odesláním kontroluje hash a velikost uloženého objektu;
@@ -336,3 +353,8 @@ požadavků na TLS, rate limiting a maximální velikost těla na reverzní prox
 Prioritizovaný seznam provozních, bezpečnostních a produktových pokračování je v
 [BACKLOG.md](BACKLOG.md). Účetnictví, daňová podání, sklad a platební příkazy
 zůstávají mimo zamýšlený produkt.
+
+Migrace `0019_invoice_document_storage.sql` doplňuje provider/ETag a odkládá
+ověření vydané faktury u nového dokumentu na COMMIT. Původní dokumenty zůstávají
+lokální; před upgradem nastavte `LOCAL_STORAGE_PATH` na jejich původní storage
+root (obvykle `./data/storage`).

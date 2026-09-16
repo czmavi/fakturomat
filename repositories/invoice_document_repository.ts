@@ -7,7 +7,9 @@ interface InvoiceDocumentRow {
   organization_id: string;
   invoice_id: string;
   type: "PDF";
+  storage_provider: "local" | "s3";
   storage_key: string;
+  etag: string | null;
   sha256: string;
   size: string;
   created_at: Date;
@@ -19,7 +21,9 @@ function documentFromRow(row: InvoiceDocumentRow): InvoiceDocument {
     organizationId: row.organization_id,
     invoiceId: row.invoice_id,
     type: row.type,
+    storageProvider: row.storage_provider,
     storageKey: row.storage_key,
+    etag: row.etag,
     sha256: row.sha256,
     size: Number(row.size),
     createdAt: row.created_at,
@@ -45,7 +49,7 @@ export class PostgresInvoiceDocumentRepository
   ): Promise<InvoiceDocument | null> {
     const rows = await this.sql<InvoiceDocumentRow[]>`
       SELECT documents.id, documents.organization_id, documents.invoice_id,
-        documents.type, documents.storage_key, documents.sha256,
+        documents.type, documents.storage_provider, documents.storage_key, documents.etag, documents.sha256,
         documents.size::text, documents.created_at
       FROM invoice_documents AS documents
       JOIN invoices

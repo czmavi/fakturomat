@@ -1,8 +1,14 @@
 # Nasazení a provoz
 
 Tento runbook popisuje doporučené nasazení Fakturomatu v1 na jeden aplikační
-server za reverzní proxy. Aplikace používá PostgreSQL a lokální object storage;
-obě úložiště jsou persistentní a musí se zálohovat společně.
+server za reverzní proxy. PDF faktur podporují lokální disk nebo privátní AWS
+S3; loga a přílohy nákladů nadále vyžadují lokální persistentní úložiště.
+PostgreSQL a všechny soubory musí mít společný plán zálohování.
+
+Konfigurace S3, IAM, Deno Deploy Cloud Connection a přechod existujících PDF
+jsou popsané v [DOCUMENT_STORAGE.md](DOCUMENT_STORAGE.md). Podpora S3 v této
+změně pokrývá PDF faktur; pro celý provoz s logy a přílohami na Deno Deploy je
+nutné zajistit také jejich persistentní úložiště.
 
 ## Provozní topologie
 
@@ -10,7 +16,8 @@ Minimální produkční instalace obsahuje:
 
 - jednu nebo více instancí sestavené Fresh aplikace;
 - PostgreSQL 17 v privátní síti;
-- persistentní adresář pro PDF, loga a přílohy;
+- persistentní adresář pro loga a přílohy; pro PDF privátní S3 nebo persistentní
+  disk;
 - reverzní proxy s TLS, limitem těla požadavku a rate limitingem přihlášení.
 
 Soubor `compose.yaml` v repozitáři spouští pouze lokální vývojovou databázi.
@@ -33,19 +40,22 @@ potřebným síťovým cílům. PostgreSQL ani storage nemají být veřejně do
 Produkční proměnné ukládejte do správce tajemství nebo do souboru čitelného jen
 provozním uživatelem. Soubor `.env` nepatří do verzovacího systému.
 
-| Proměnná                          | Povinnost     | Význam                                                            |
-| --------------------------------- | ------------- | ----------------------------------------------------------------- |
-| `APP_ENV`                         | ano           | V produkci vždy `production`; zapíná `Secure` cookies a HSTS.     |
-| `DATABASE_URL`                    | ano           | PostgreSQL connection string. Heslo musí být produkční tajemství. |
-| `DATABASE_MAX_CONNECTIONS`        | ne            | Velikost poolu jedné instance, výchozí `10`, rozsah 1–100.        |
-| `BETTER_AUTH_URL`                 | ano           | Veřejný HTTPS origin aplikace bez cesty.                          |
-| `BETTER_AUTH_SECRET`              | ano           | Náhodný tajný klíč Better Auth, minimálně 32 znaků.               |
-| `STORAGE_LOCAL_ROOT`              | ano           | Absolutní cesta na persistentním svazku.                          |
-| `BANK_CREDENTIALS_ENCRYPTION_KEY` | ano pro Fio   | Base64 hodnota dekódující se přesně na 32 bajtů.                  |
-| `FAKTUROMAT_ADMIN_EMAIL`          | jen bootstrap | E-mail uživatele zakládaného přes CLI.                            |
-| `FAKTUROMAT_ADMIN_NAME`           | jen bootstrap | Zobrazované jméno zakládaného uživatele.                          |
-| `FAKTUROMAT_ADMIN_PASSWORD`       | jen bootstrap | Heslo o délce alespoň 12 znaků; po použití odstranit.             |
-| `TEST_DATABASE_URL`               | jen testy     | Connection string oddělené databáze, kterou mohou testy měnit.    |
+| Proměnná                          | Povinnost            | Význam                                                            |
+| --------------------------------- | -------------------- | ----------------------------------------------------------------- |
+| `APP_ENV`                         | ano                  | V produkci vždy `production`; zapíná `Secure` cookies a HSTS.     |
+| `DATABASE_URL`                    | ano                  | PostgreSQL connection string. Heslo musí být produkční tajemství. |
+| `DATABASE_MAX_CONNECTIONS`        | ne                   | Velikost poolu jedné instance, výchozí `10`, rozsah 1–100.        |
+| `BETTER_AUTH_URL`                 | ano                  | Veřejný HTTPS origin aplikace bez cesty.                          |
+| `BETTER_AUTH_SECRET`              | ano                  | Náhodný tajný klíč Better Auth, minimálně 32 znaků.               |
+| `STORAGE_LOCAL_ROOT`              | ano pro loga/přílohy | Absolutní cesta na persistentním svazku.                          |
+| `LOCAL_STORAGE_PATH`              | při lokálních PDF    | Výchozí `./data/documents`; při upgradu původní root PDF.         |
+| `S3_BUCKET`                       | při S3 PDF           | Privátní bucket; nefunkční konfigurace zastaví start.             |
+| `S3_REGION`, `AWS_REGION`         | při S3 PDF           | Region; `S3_REGION` má přednost.                                  |
+| `BANK_CREDENTIALS_ENCRYPTION_KEY` | ano pro Fio          | Base64 hodnota dekódující se přesně na 32 bajtů.                  |
+| `FAKTUROMAT_ADMIN_EMAIL`          | jen bootstrap        | E-mail uživatele zakládaného přes CLI.                            |
+| `FAKTUROMAT_ADMIN_NAME`           | jen bootstrap        | Zobrazované jméno zakládaného uživatele.                          |
+| `FAKTUROMAT_ADMIN_PASSWORD`       | jen bootstrap        | Heslo o délce alespoň 12 znaků; po použití odstranit.             |
+| `TEST_DATABASE_URL`               | jen testy            | Connection string oddělené databáze, kterou mohou testy měnit.    |
 
 Šifrovací klíč vytvořte jednou, například:
 
@@ -244,7 +254,8 @@ smoke test je nemá vytvářet jako dočasná data.
 Úplná záloha se skládá ze tří neoddělitelných částí:
 
 1. PostgreSQL dump;
-2. obsah adresáře `STORAGE_LOCAL_ROOT`;
+2. obsah adresářů `STORAGE_LOCAL_ROOT`, `LOCAL_STORAGE_PATH` a případně S3
+   bucketu;
 3. `BANK_CREDENTIALS_ENCRYPTION_KEY` uložený odděleně a šifrovaně.
 
 Databáze obsahuje metadata a SHA-256 souborů, zatímco jejich bajty jsou ve

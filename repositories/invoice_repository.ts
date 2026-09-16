@@ -16,7 +16,6 @@ import {
 import type { InvoiceNumberSequence } from "@/domain/invoices/number_sequence_types.ts";
 import type {
   InvoiceDocumentPreparer,
-  PreparedInvoiceDocument,
 } from "@/domain/invoices/invoice_document.ts";
 import type { InvoiceTemplateVersion } from "@/domain/invoices/template_types.ts";
 import {
@@ -69,6 +68,7 @@ interface ItemRow {
 
 interface DraftIssueRow {
   id: string;
+  revision: string;
   status: InvoiceStatus;
   contact_id: string;
   number_sequence_id: string;
@@ -407,11 +407,18 @@ export class PostgresInvoiceRepository implements InvoiceRepository {
     invoiceId: string;
     userId: string;
   }, documentPreparer: InvoiceDocumentPreparer): Promise<IssueInvoiceResult> {
-    let preparedDocument: PreparedInvoiceDocument | null = null;
-    try {
-      return await this.sql.begin(async (transaction) => {
-        const drafts = await transaction<DraftIssueRow[]>`
-        SELECT invoices.id, invoices.status, invoices.contact_id,
+    // Reserve the number and capture a consistent snapshot in a short transaction.
+    // The storage upload is deliberately outside any database transaction.
+    const preparation = await this.sql.begin<
+      Exclude<IssueInvoiceResult, { kind: "issued" }> | {
+        kind: "prepared";
+        invoice: Invoice;
+        templateVersion: InvoiceTemplateVersion;
+        revision: string;
+      }
+    >(async (transaction) => {
+      const drafts = await transaction<DraftIssueRow[]>`
+        SELECT invoices.id, invoices.xmin::text AS revision, invoices.status, invoices.contact_id,
           invoices.number_sequence_id, invoices.bank_account_id,
           invoices.invoice_template_id, invoices.variable_symbol,
           invoices.issue_date, invoices.due_date, invoices.currency,
@@ -424,14 +431,14 @@ export class PostgresInvoiceRepository implements InvoiceRepository {
           AND memberships.user_id = ${input.userId}
         FOR UPDATE OF invoices
       `;
-        const draft = drafts[0];
-        if (!draft) return { kind: "not_found" };
-        if (draft.status !== "DRAFT") return { kind: "not_draft" };
-        if (draft.bank_account_id === null) {
-          return { kind: "bank_account_required" };
-        }
+      const draft = drafts[0];
+      if (!draft) return { kind: "not_found" };
+      if (draft.status !== "DRAFT") return { kind: "not_draft" };
+      if (draft.bank_account_id === null) {
+        return { kind: "bank_account_required" };
+      }
 
-        const suppliers = await transaction<SupplierRow[]>`
+      const suppliers = await transaction<SupplierRow[]>`
         SELECT official_name, display_name, ico, dic, street, city,
           postal_code, country, email, phone, website, logo_storage_key,
           logo_mime_type, invoice_footer
@@ -439,7 +446,7 @@ export class PostgresInvoiceRepository implements InvoiceRepository {
         WHERE id = ${input.organizationId}
         FOR SHARE
       `;
-        const customers = await transaction<CustomerRow[]>`
+      const customers = await transaction<CustomerRow[]>`
         SELECT type, name, ico, dic, street, city, postal_code, country,
           email, phone
         FROM contacts
@@ -447,7 +454,7 @@ export class PostgresInvoiceRepository implements InvoiceRepository {
           AND organization_id = ${input.organizationId}
         FOR SHARE
       `;
-        const bankAccounts = await transaction<BankAccountRow[]>`
+      const bankAccounts = await transaction<BankAccountRow[]>`
         SELECT name, bank_name, account_prefix, account_number, bank_code,
           iban, bic, currency
         FROM bank_accounts
@@ -456,7 +463,7 @@ export class PostgresInvoiceRepository implements InvoiceRepository {
           AND is_active
         FOR SHARE
       `;
-        const sequences = await transaction<IssueSequenceRow[]>`
+      const sequences = await transaction<IssueSequenceRow[]>`
         SELECT id, organization_id, name, prefix, padding, is_default,
           is_active, created_at, updated_at
         FROM invoice_number_sequences
@@ -465,17 +472,17 @@ export class PostgresInvoiceRepository implements InvoiceRepository {
           AND is_active
         FOR SHARE
       `;
-        const templateVersions = await transaction<
-          Array<{
-            id: string;
-            invoice_template_id: string;
-            version: number;
-            html: string;
-            css: string;
-            created_by: string | null;
-            created_at: Date;
-          }>
-        >`
+      const templateVersions = await transaction<
+        Array<{
+          id: string;
+          invoice_template_id: string;
+          version: number;
+          html: string;
+          css: string;
+          created_by: string | null;
+          created_at: Date;
+        }>
+      >`
         SELECT versions.id, versions.invoice_template_id, versions.version,
           versions.html, versions.css, versions.created_by, versions.created_at
         FROM invoice_templates AS templates
@@ -490,146 +497,199 @@ export class PostgresInvoiceRepository implements InvoiceRepository {
           )
         FOR SHARE OF templates, versions
       `;
-        const lockedItems = await transaction<{ id: string }[]>`
+      const lockedItems = await transaction<{ id: string }[]>`
         SELECT id FROM invoice_items
         WHERE invoice_id = ${draft.id}
         FOR SHARE
       `;
-        if (
-          !suppliers[0] || !customers[0] || !bankAccounts[0] || !sequences[0] ||
-          !templateVersions[0] || lockedItems.length === 0
-        ) {
-          return { kind: "reference_unavailable" };
-        }
-        if (bankAccounts[0].currency !== draft.currency) {
-          return { kind: "bank_account_currency_mismatch" };
-        }
-
-        const supplierSnapshot: SupplierSnapshot = {
-          officialName: suppliers[0].official_name,
-          displayName: suppliers[0].display_name,
-          ico: suppliers[0].ico,
-          dic: suppliers[0].dic,
-          street: suppliers[0].street,
-          city: suppliers[0].city,
-          postalCode: suppliers[0].postal_code,
-          country: suppliers[0].country,
-          email: suppliers[0].email,
-          phone: suppliers[0].phone,
-          website: suppliers[0].website,
-          logoStorageKey: suppliers[0].logo_storage_key,
-          logoMimeType: suppliers[0].logo_mime_type,
-          invoiceFooter: suppliers[0].invoice_footer,
-        };
-        const customerSnapshot: CustomerSnapshot = {
-          type: customers[0].type,
-          name: customers[0].name,
-          ico: customers[0].ico,
-          dic: customers[0].dic,
-          street: customers[0].street,
-          city: customers[0].city,
-          postalCode: customers[0].postal_code,
-          country: customers[0].country,
-          email: customers[0].email,
-          phone: customers[0].phone,
-        };
-        const bankAccountSnapshot: BankAccountSnapshot = {
-          name: bankAccounts[0].name,
-          bankName: bankAccounts[0].bank_name,
-          accountPrefix: bankAccounts[0].account_prefix,
-          accountNumber: bankAccounts[0].account_number,
-          bankCode: bankAccounts[0].bank_code,
-          iban: bankAccounts[0].iban,
-          bic: bankAccounts[0].bic,
-          currency: bankAccounts[0].currency,
-        };
-        const sequence: InvoiceNumberSequence = {
-          id: sequences[0].id,
-          organizationId: sequences[0].organization_id,
-          name: sequences[0].name,
-          prefix: sequences[0].prefix,
-          padding: sequences[0].padding,
-          isDefault: sequences[0].is_default,
-          isActive: sequences[0].is_active,
-          createdAt: sequences[0].created_at,
-          updatedAt: sequences[0].updated_at,
-        };
-        try {
-          createSpaydPayload({
-            bankAccount: bankAccountSnapshot,
-            amount: draft.total,
-            currency: draft.currency,
-            variableSymbol: draft.variable_symbol ?? "1",
-            dueDate: dateString(draft.due_date),
-            message: "FAKTURA",
-          });
-        } catch (error) {
-          if (error instanceof QrPaymentValidationError) {
-            return { kind: "qr_payment_unavailable" };
-          }
-          throw error;
-        }
-        const year = Number(dateString(draft.issue_date).slice(0, 4));
-        const number = await allocateNextInvoiceNumber(
-          transaction,
-          sequence,
-          year,
-        );
-        const derivedVariableSymbol = number.replaceAll(/\D/g, "").slice(-10);
-        const variableSymbol = draft.variable_symbol ?? derivedVariableSymbol;
-
-        await transaction`
-        UPDATE invoices
-        SET number = ${number}, variable_symbol = ${variableSymbol},
-          supplier_snapshot = ${transaction.json(supplierSnapshot)},
-          customer_snapshot = ${transaction.json(customerSnapshot)},
-          bank_account_snapshot = ${transaction.json(bankAccountSnapshot)},
-          template_version_id = ${templateVersions[0].id}, status = 'ISSUED',
-          issued_at = now(), issued_by = ${input.userId}, updated_at = now()
-        WHERE id = ${draft.id} AND organization_id = ${input.organizationId}
-          AND status = 'DRAFT'
-      `;
-        const invoice = await this.findInTransaction(
-          transaction,
-          input.organizationId,
-          draft.id,
-          input.userId,
-        );
-        if (!invoice) throw new Error("Issued invoice could not be loaded");
-        const templateVersion: InvoiceTemplateVersion = {
-          id: templateVersions[0].id,
-          invoiceTemplateId: templateVersions[0].invoice_template_id,
-          version: templateVersions[0].version,
-          html: templateVersions[0].html,
-          css: templateVersions[0].css,
-          createdBy: templateVersions[0].created_by,
-          createdAt: templateVersions[0].created_at,
-        };
-        preparedDocument = await documentPreparer.prepare(
-          invoice,
-          templateVersion,
-        );
-        await transaction`
-        INSERT INTO invoice_documents (
-          id, organization_id, invoice_id, type, storage_key, sha256, size
-        ) VALUES (
-          ${preparedDocument.id}, ${input.organizationId}, ${draft.id},
-          ${preparedDocument.type}, ${preparedDocument.storageKey},
-          ${preparedDocument.sha256}, ${preparedDocument.size}
-        )
-      `;
-        return { kind: "issued", invoice };
-      });
-    } catch (error) {
-      if (preparedDocument !== null) {
-        try {
-          await documentPreparer.discard(preparedDocument);
-        } catch {
-          console.error(
-            "Rolled back invoice PDF could not be removed from object storage.",
-          );
-        }
+      if (
+        !suppliers[0] || !customers[0] || !bankAccounts[0] || !sequences[0] ||
+        !templateVersions[0] || lockedItems.length === 0
+      ) {
+        return { kind: "reference_unavailable" };
       }
+      if (bankAccounts[0].currency !== draft.currency) {
+        return { kind: "bank_account_currency_mismatch" };
+      }
+
+      const supplierSnapshot: SupplierSnapshot = {
+        officialName: suppliers[0].official_name,
+        displayName: suppliers[0].display_name,
+        ico: suppliers[0].ico,
+        dic: suppliers[0].dic,
+        street: suppliers[0].street,
+        city: suppliers[0].city,
+        postalCode: suppliers[0].postal_code,
+        country: suppliers[0].country,
+        email: suppliers[0].email,
+        phone: suppliers[0].phone,
+        website: suppliers[0].website,
+        logoStorageKey: suppliers[0].logo_storage_key,
+        logoMimeType: suppliers[0].logo_mime_type,
+        invoiceFooter: suppliers[0].invoice_footer,
+      };
+      const customerSnapshot: CustomerSnapshot = {
+        type: customers[0].type,
+        name: customers[0].name,
+        ico: customers[0].ico,
+        dic: customers[0].dic,
+        street: customers[0].street,
+        city: customers[0].city,
+        postalCode: customers[0].postal_code,
+        country: customers[0].country,
+        email: customers[0].email,
+        phone: customers[0].phone,
+      };
+      const bankAccountSnapshot: BankAccountSnapshot = {
+        name: bankAccounts[0].name,
+        bankName: bankAccounts[0].bank_name,
+        accountPrefix: bankAccounts[0].account_prefix,
+        accountNumber: bankAccounts[0].account_number,
+        bankCode: bankAccounts[0].bank_code,
+        iban: bankAccounts[0].iban,
+        bic: bankAccounts[0].bic,
+        currency: bankAccounts[0].currency,
+      };
+      const sequence: InvoiceNumberSequence = {
+        id: sequences[0].id,
+        organizationId: sequences[0].organization_id,
+        name: sequences[0].name,
+        prefix: sequences[0].prefix,
+        padding: sequences[0].padding,
+        isDefault: sequences[0].is_default,
+        isActive: sequences[0].is_active,
+        createdAt: sequences[0].created_at,
+        updatedAt: sequences[0].updated_at,
+      };
+      try {
+        createSpaydPayload({
+          bankAccount: bankAccountSnapshot,
+          amount: draft.total,
+          currency: draft.currency,
+          variableSymbol: draft.variable_symbol ?? "1",
+          dueDate: dateString(draft.due_date),
+          message: "FAKTURA",
+        });
+      } catch (error) {
+        if (error instanceof QrPaymentValidationError) {
+          return { kind: "qr_payment_unavailable" };
+        }
+        throw error;
+      }
+      const year = Number(dateString(draft.issue_date).slice(0, 4));
+      const number = await allocateNextInvoiceNumber(
+        transaction,
+        sequence,
+        year,
+      );
+      const derivedVariableSymbol = number.replaceAll(/\D/g, "").slice(-10);
+      const variableSymbol = draft.variable_symbol ?? derivedVariableSymbol;
+
+      const current = await this.findInTransaction(
+        transaction,
+        input.organizationId,
+        draft.id,
+        input.userId,
+      );
+      if (!current) throw new Error("Invoice draft could not be loaded");
+      const invoice: Invoice = {
+        ...current,
+        number,
+        variableSymbol,
+        supplierSnapshot,
+        customerSnapshot,
+        bankAccountSnapshot,
+        templateVersionId: templateVersions[0].id,
+        templateVersionNumber: templateVersions[0].version,
+        status: "ISSUED",
+        issuedAt: new Date(),
+        issuedBy: input.userId,
+      };
+      const templateVersion: InvoiceTemplateVersion = {
+        id: templateVersions[0].id,
+        invoiceTemplateId: templateVersions[0].invoice_template_id,
+        version: templateVersions[0].version,
+        html: templateVersions[0].html,
+        css: templateVersions[0].css,
+        createdBy: templateVersions[0].created_by,
+        createdAt: templateVersions[0].created_at,
+      };
+      return {
+        kind: "prepared",
+        invoice,
+        templateVersion,
+        revision: draft.revision,
+      };
+    });
+    if (preparation.kind !== "prepared") return preparation;
+    const { invoice, templateVersion, revision } = preparation;
+    const preparedDocument = await documentPreparer.prepare(
+      invoice,
+      templateVersion,
+    );
+    const warnOrphan = () =>
+      console.warn("Orphaned invoice document after failed issuance", {
+        documentId: preparedDocument.id,
+        storageProvider: preparedDocument.storageProvider,
+        storageKey: preparedDocument.storageKey,
+      });
+    try {
+      const result = await this.sql.begin<IssueInvoiceResult>(
+        async (transaction) => {
+          // Re-authorize and reject edits or another issuance during the upload.
+          const rows = await transaction<
+            { status: InvoiceStatus; revision: string }[]
+          >`
+          SELECT invoices.status, invoices.xmin::text AS revision
+          FROM invoices
+          JOIN organization_memberships AS memberships
+            ON memberships.organization_id = invoices.organization_id
+          WHERE invoices.id = ${input.invoiceId}
+            AND invoices.organization_id = ${input.organizationId}
+            AND memberships.user_id = ${input.userId}
+          FOR UPDATE OF invoices FOR SHARE OF memberships
+        `;
+          if (!rows[0]) return { kind: "not_found" };
+          if (rows[0].status !== "DRAFT") return { kind: "not_draft" };
+          if (rows[0].revision !== revision) {
+            return { kind: "reference_unavailable" };
+          }
+          await transaction`
+          INSERT INTO invoice_documents (
+            id, organization_id, invoice_id, type, storage_provider, storage_key, sha256, size, etag
+          ) VALUES (
+            ${preparedDocument.id}, ${input.organizationId}, ${invoice.id},
+            ${preparedDocument.type}, ${preparedDocument.storageProvider}, ${preparedDocument.storageKey},
+            ${preparedDocument.sha256}, ${preparedDocument.size}, ${preparedDocument.etag}
+          )
+        `;
+          await transaction`
+          UPDATE invoices
+          SET number = ${invoice.number}, variable_symbol = ${invoice.variableSymbol},
+            supplier_snapshot = ${transaction.json(invoice.supplierSnapshot!)},
+            customer_snapshot = ${transaction.json(invoice.customerSnapshot!)},
+            bank_account_snapshot = ${
+            transaction.json(invoice.bankAccountSnapshot!)
+          },
+            template_version_id = ${templateVersion.id}, status = 'ISSUED',
+            issued_at = ${invoice
+            .issuedAt!}, issued_by = ${input.userId}, updated_at = now()
+          WHERE id = ${invoice.id} AND organization_id = ${input.organizationId}
+        `;
+          const issued = await this.findInTransaction(
+            transaction,
+            input.organizationId,
+            invoice.id,
+            input.userId,
+          );
+          if (!issued) throw new Error("Issued invoice could not be loaded");
+          return { kind: "issued", invoice: issued };
+        },
+      );
+      if (result.kind !== "issued") warnOrphan();
+      return result;
+    } catch (error) {
+      warnOrphan();
       throw error;
     }
   }

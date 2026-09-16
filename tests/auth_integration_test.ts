@@ -1,3 +1,9 @@
+import { App, type Middleware } from "fresh";
+import { GetObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { S3DocumentStorage } from "@/services/storage/s3_document_storage.ts";
+import { createInvoicePdfHandler } from "@/routes/o/[organizationId]/invoices/[invoiceId]/document.pdf.ts";
+import type { State } from "@/utils.ts";
+import { sha256Hex } from "@/services/storage/integrity.ts";
 import { closeDb, getDb } from "@/database/client.ts";
 import { migrate } from "@/database/migrate.ts";
 import { PostgresBankAccountRepository } from "@/repositories/bank_account_repository.ts";
@@ -52,6 +58,8 @@ import {
   LEGACY_TEST_PASSWORD_HASH,
   TestAuthRepository,
 } from "@/tests/auth_test_helper.ts";
+
+import { MemoryDocumentStorage } from "@/tests/document_storage_test_helper.ts";
 
 const testDatabaseUrl = Deno.env.get("TEST_DATABASE_URL");
 
@@ -1790,7 +1798,7 @@ Deno.test({
     const invoicePaymentService = new InvoicePaymentService(
       invoicePaymentRepository,
     );
-    const documentStorage = new MemoryObjectStorage();
+    const documentStorage = new MemoryDocumentStorage();
     const invoiceService = new InvoiceService(
       invoiceRepository,
       new InvoiceDocumentService(new HtmlEchoPdfRenderer(), documentStorage),
@@ -1980,6 +1988,115 @@ Deno.test({
         ownerId,
       );
       assert(originalDocument !== null, "issued invoice has no PDF metadata");
+      assert(
+        originalDocument.storageProvider === "local" &&
+          originalDocument.etag === null,
+        "document provider/etag metadata missing",
+      );
+      assert(
+        originalDocument.storageKey ===
+          `invoices/${organizationId}/${original.id}/${originalDocument.id}.pdf`,
+        "document key is not scoped by organization, invoice and document UUID",
+      );
+      assert(
+        documentStorage.uploads.every((upload) =>
+          upload.contentType === "application/pdf"
+        ),
+        "invoice uploads must specify PDF content type",
+      );
+      const storedPdf = documentStorage.objects.get(
+        originalDocument.storageKey,
+      )!;
+      assert(
+        originalDocument.sha256 === await sha256Hex(storedPdf) &&
+          originalDocument.size === storedPdf.length,
+        "document hash/size metadata incorrect",
+      );
+
+      // Exercise the actual endpoint and PostgreSQL authorization before signing.
+      const s3Client = new S3Client({ region: "eu-central-1" });
+      let signCalls = 0;
+      const s3 = new S3DocumentStorage(
+        s3Client,
+        "private-test",
+        (_client, command, options) => {
+          assert(
+            command instanceof GetObjectCommand &&
+              command.input.Key === originalDocument.storageKey,
+            "signed key did not come from authorized DB metadata",
+          );
+          assert(
+            options?.expiresIn === 300,
+            "signed URL expiry is not 300 seconds",
+          );
+          signCalls++;
+          return Promise.resolve("https://private-test.example/signed");
+        },
+      );
+      const pdfHandler = createInvoicePdfHandler({
+        invoices: invoiceRepository,
+        documents: {
+          async findPdfForUser(...args) {
+            const document = await documentRepository.findPdfForUser(...args);
+            return document ? { ...document, storageProvider: "s3" } : null;
+          },
+        },
+        storage: (provider) => {
+          assert(provider === "s3", "wrong provider");
+          return Promise.resolve(s3);
+        },
+      });
+      const pdfApp = new App<State>();
+      pdfApp.use(async (ctx) => {
+        const id = ctx.req.headers.get("test-user");
+        ctx.state.user = id
+          ? { id, email: "test@example.test", displayName: "Test" }
+          : null;
+        return await ctx.next();
+      });
+      pdfApp.get(
+        "/o/:organizationId/invoices/:invoiceId/document.pdf",
+        pdfHandler.GET as Middleware<State>,
+      );
+      const pdfFetch = pdfApp.handler();
+      const pdfUrl =
+        `http://fakturomat.test/o/${organizationId}/invoices/${original.id}/document.pdf`;
+      assert(
+        (await pdfFetch(new Request(pdfUrl))).status === 401,
+        "anonymous PDF download allowed",
+      );
+      assert(
+        (await pdfFetch(
+          new Request(pdfUrl, { headers: { "test-user": outsiderId } }),
+        )).status === 404,
+        "outsider PDF download allowed",
+      );
+      assert(
+        (await pdfFetch(
+          new Request(pdfUrl.replace(organizationId, crypto.randomUUID()), {
+            headers: { "test-user": ownerId },
+          }),
+        )).status === 404,
+        "invoice downloaded through another organization scope",
+      );
+      assert(signCalls === 0, "unauthorized request reached signing");
+      const signedResponse = await pdfFetch(
+        new Request(`${pdfUrl}?key=attacker-controlled.pdf`, {
+          headers: { "test-user": ownerId },
+        }),
+      );
+      assert(
+        signedResponse.status === 302 &&
+          signedResponse.headers.get("location") ===
+            "https://private-test.example/signed",
+        "authorized user did not receive a signed redirect",
+      );
+      assert(
+        signedResponse.headers.get("cache-control") === "private, no-store",
+        "signed redirect is cacheable",
+      );
+      s3Client.destroy();
+
       assert(
         await documentRepository.findPdfForUser(
           organizationId,
@@ -2309,6 +2426,180 @@ Deno.test({
           draftAfterPdfFailure.number === null,
         "PDF rendering failure left a partially issued invoice",
       );
+
+      const failingUpload = new InvoiceService(
+        invoiceRepository,
+        new InvoiceDocumentService(
+          new HtmlEchoPdfRenderer(),
+          {
+            provider: "s3",
+            put: () => Promise.reject(new Error("simulated S3 upload failure")),
+            getDownloadTarget: () => {
+              throw new Error("unexpected download");
+            },
+          },
+        ),
+      );
+      assert(
+        (await failingUpload.issue({
+          id: failedDraft.id,
+          organizationId,
+          userId: ownerId,
+        })).kind === "pdf_generation_failed",
+        "upload failure was not reported",
+      );
+      assert(
+        (await invoiceRepository.findForUser(
+          organizationId,
+          failedDraft.id,
+          ownerId,
+        ))?.status === "DRAFT",
+        "upload failure issued the invoice",
+      );
+      assert(
+        await documentRepository.findPdfForUser(
+          organizationId,
+          failedDraft.id,
+          ownerId,
+        ) === null,
+        "upload failure persisted document metadata",
+      );
+
+      const warnings: unknown[][] = [];
+      const originalWarn = console.warn;
+      console.warn = (...args: unknown[]) => {
+        warnings.push(args);
+      };
+      let orphanKey = "";
+      try {
+        const preparer = new InvoiceDocumentService(
+          new HtmlEchoPdfRenderer(),
+          documentStorage,
+        );
+        let failed = false;
+        try {
+          await invoiceRepository.issueForUser({
+            invoiceId: failedDraft.id,
+            organizationId,
+            userId: ownerId,
+          }, {
+            async prepare(invoice, template) {
+              // This separate DB write would block if upload still ran inside the issuance transaction.
+              await sql`UPDATE invoices SET note = note WHERE id = ${failedDraft.id}`;
+              const prepared = await preparer.prepare(invoice, template);
+              orphanKey = prepared.storageKey;
+              return { ...prepared, sha256: "invalid" };
+            },
+          });
+        } catch {
+          failed = true;
+        }
+        // The concurrent update must invalidate the prepared snapshot before insertion.
+        assert(
+          !failed && warnings.length === 1 &&
+            documentStorage.objects.has(orphanKey),
+          "concurrent edit must preserve and warn about the orphan",
+        );
+        warnings.length = 0;
+        try {
+          await invoiceRepository.issueForUser({
+            invoiceId: failedDraft.id,
+            organizationId,
+            userId: ownerId,
+          }, {
+            async prepare(invoice, template) {
+              const prepared = await preparer.prepare(invoice, template);
+              orphanKey = prepared.storageKey;
+              return { ...prepared, sha256: "invalid" };
+            },
+          });
+        } catch {
+          failed = true;
+        }
+        assert(
+          failed && warnings.length === 1 &&
+            documentStorage.objects.has(orphanKey),
+          "DB failure must preserve and warn about the uploaded orphan",
+        );
+        assert(
+          (await invoiceRepository.findForUser(
+            organizationId,
+            failedDraft.id,
+            ownerId,
+          ))?.status === "DRAFT",
+          "DB failure left the invoice issued",
+        );
+        assert(
+          await documentRepository.findPdfForUser(
+            organizationId,
+            failedDraft.id,
+            ownerId,
+          ) === null,
+          "DB failure committed document metadata",
+        );
+      } finally {
+        console.warn = originalWarn;
+      }
+
+      // Both requests finish uploading before either can commit. Only one wins.
+      const raceDraft = await invoiceService.createDraft(draftValues);
+      assert(raceDraft !== null, "race draft setup failed");
+      const uploadsReady = Promise.withResolvers<void>();
+      let uploadCount = 0;
+      const raceStorage = new MemoryDocumentStorage();
+      const raceService = new InvoiceService(
+        invoiceRepository,
+        new InvoiceDocumentService(new HtmlEchoPdfRenderer(), {
+          provider: "s3",
+          async put(input) {
+            const stored = await raceStorage.put(input);
+            uploadCount++;
+            if (uploadCount === 2) uploadsReady.resolve();
+            await uploadsReady.promise;
+            return { ...stored, storageProvider: "s3", etag: '"test-s3-etag"' };
+          },
+          getDownloadTarget: () => {
+            throw new Error("unexpected download");
+          },
+        }),
+      );
+      const raceWarnings: unknown[][] = [];
+      console.warn = (...args: unknown[]) => {
+        raceWarnings.push(args);
+      };
+      try {
+        const results = await Promise.all(
+          [1, 2].map(() =>
+            raceService.issue({
+              id: raceDraft.id,
+              organizationId,
+              userId: ownerId,
+            })
+          ),
+        );
+        assert(
+          results.filter((result) => result.kind === "issued").length === 1 &&
+            results.filter((result) => result.kind === "not_draft").length ===
+              1,
+          "concurrent requests issued the same invoice twice",
+        );
+        assert(
+          raceStorage.objects.size === 2 && raceWarnings.length === 1,
+          "losing issuance must retain the orphan and log a warning",
+        );
+        const s3Document = await documentRepository.findPdfForUser(
+          organizationId,
+          raceDraft.id,
+          ownerId,
+        );
+        assert(
+          s3Document?.storageProvider === "s3" &&
+            s3Document.etag === '"test-s3-etag"',
+          "S3 metadata was not persisted in PostgreSQL",
+        );
+      } finally {
+        console.warn = originalWarn;
+      }
 
       await contactRepository.updateForUser({
         id: contactId,

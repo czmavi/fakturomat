@@ -5,7 +5,7 @@ import { isValidCsrfToken } from "@/services/csrf_service.ts";
 import { InvoiceService } from "@/services/invoice_service.ts";
 import { InvoiceDocumentService } from "@/services/invoice_document_service.ts";
 import { PdfLibRenderer } from "@/services/pdf/pdf_lib_renderer.ts";
-import { getObjectStorage } from "@/services/storage/storage_factory.ts";
+import { getDocumentStorage } from "@/services/storage/storage_factory.ts";
 
 export const handler = define.handlers({
   GET() {
@@ -26,7 +26,7 @@ export const handler = define.handlers({
       new PostgresInvoiceRepository(),
       new InvoiceDocumentService(
         new PdfLibRenderer(),
-        getObjectStorage(),
+        await getDocumentStorage(),
       ),
     ).issue({
       id: ctx.params.invoiceId,

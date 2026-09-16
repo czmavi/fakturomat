@@ -4,31 +4,16 @@ import {
   readVerifiedInvoiceDocument,
   sha256Hex,
 } from "@/services/invoice_document_service.ts";
-import type {
-  ObjectStorage,
-  StoredObject,
-} from "@/services/storage/object_storage.ts";
+import { MemoryDocumentStorage } from "@/tests/document_storage_test_helper.ts";
 
 function assert(condition: boolean, message: string): asserts condition {
   if (!condition) throw new Error(message);
 }
 
-class MemoryStorage implements ObjectStorage {
-  constructor(private data: Uint8Array | null) {}
-
-  put(_key: string, data: Uint8Array): Promise<void> {
-    this.data = data.slice();
-    return Promise.resolve();
-  }
-
-  get(_key: string): Promise<StoredObject | null> {
-    return Promise.resolve(this.data ? { data: this.data.slice() } : null);
-  }
-
-  delete(_key: string): Promise<void> {
-    this.data = null;
-    return Promise.resolve();
-  }
+function memoryStorage(data: Uint8Array): MemoryDocumentStorage {
+  const storage = new MemoryDocumentStorage();
+  storage.objects.set("invoices/test.pdf", data);
+  return storage;
 }
 
 async function metadata(data: Uint8Array): Promise<InvoiceDocument> {
@@ -37,7 +22,9 @@ async function metadata(data: Uint8Array): Promise<InvoiceDocument> {
     organizationId: crypto.randomUUID(),
     invoiceId: crypto.randomUUID(),
     type: "PDF",
+    storageProvider: "local",
     storageKey: "invoices/test.pdf",
+    etag: null,
     sha256: await sha256Hex(data),
     size: data.length,
     createdAt: new Date(),
@@ -47,7 +34,7 @@ async function metadata(data: Uint8Array): Promise<InvoiceDocument> {
 Deno.test("invoice document verifies stored PDF hash and size", async () => {
   const data = new TextEncoder().encode("%PDF-1.7\nimmutable");
   const result = await readVerifiedInvoiceDocument(
-    new MemoryStorage(data),
+    memoryStorage(data),
     await metadata(data),
   );
   assert(
@@ -62,7 +49,7 @@ Deno.test("invoice document rejects corrupted storage content", async () => {
   let rejected = false;
   try {
     await readVerifiedInvoiceDocument(
-      new MemoryStorage(corrupted),
+      memoryStorage(corrupted),
       await metadata(expected),
     );
   } catch (error) {

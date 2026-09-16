@@ -63,7 +63,15 @@ aplikace; není určený k veřejné registraci ani jako účetní systém.
   nezahrnují.
 - Uploady mají velikostní limit, allowlist MIME typů a kontrolu binární
   signatury. Storage keys jsou náhodné a chráněné proti path traversal.
-- Při čtení PDF a příloh se ověřuje uložená velikost a SHA-256.
+- Při lokálním čtení PDF a příloh se ověřuje uložená velikost a SHA-256. S3 PDF
+  používají autorizovaný redirect na signed URL s platností 300 sekund; backend
+  při downloadu znovu nestahuje celý objekt pro kontrolu hashe.
+- S3 inicializace vyžaduje všechny čtyři bucket Block Public Access přepínače.
+  Upload nepoužívá ACL a podmínka `If-None-Match: *` brání přepsání objektu.
+  Podepisuje se pouze klíč z organization-scoped DB dotazu, po ověření
+  uživatele. Signed URL je krátkodobý bearer přístup: držitel jej může po dobu
+  platnosti použít. Credentials, tokeny a signed URL se neukládají do DB ani
+  aplikačních logů.
 - Požadavky s deklarovanou velikostí nad 21 MiB se odmítnou ještě před
   parsováním formuláře.
 

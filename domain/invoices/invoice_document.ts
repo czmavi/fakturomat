@@ -8,7 +8,9 @@ export interface InvoiceDocument {
   organizationId: string;
   invoiceId: string;
   type: InvoiceDocumentType;
+  storageProvider: "local" | "s3";
   storageKey: string;
+  etag: string | null;
   sha256: string;
   size: number;
   createdAt: Date;
@@ -17,7 +19,9 @@ export interface InvoiceDocument {
 export interface PreparedInvoiceDocument {
   id: string;
   type: InvoiceDocumentType;
+  storageProvider: "local" | "s3";
   storageKey: string;
+  etag: string | null;
   sha256: string;
   size: number;
 }
@@ -27,5 +31,4 @@ export interface InvoiceDocumentPreparer {
     invoice: Invoice,
     templateVersion: InvoiceTemplateVersion,
   ): Promise<PreparedInvoiceDocument>;
-  discard(document: PreparedInvoiceDocument): Promise<void>;
 }
