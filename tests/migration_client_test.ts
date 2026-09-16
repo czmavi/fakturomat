@@ -123,3 +123,47 @@ Deno.test("migration diagnostics report effective destination and timeline witho
     }
   }
 });
+
+Deno.test("migration URL errors identify input mistakes and missing override without echoing credentials", () => {
+  const url = "postgresql://owner:private-password@db.example.invalid/app";
+  const cases = [
+    [`DATABASE_URL=${url}`, "variable assignment"],
+    [`'${url}'`, "starts with a quote"],
+    [`psql '${url}'`, "psql command"],
+    [
+      "https://owner:private-password@db.example.invalid/app",
+      "must start with",
+    ],
+    ["postgresql:///app", "has no hostname"],
+    [
+      "postgresql://owner:private-password@db.example.invalid:invalid/app",
+      "cannot be parsed",
+    ],
+  ];
+  for (const source of ["DATABASE_URL", "DATABASE_MIGRATION_URL"]) {
+    for (const [value, expected] of cases) {
+      let message = "";
+      try {
+        migrationConnectionConfig((name) =>
+          name === source ? value : undefined
+        );
+      } catch (error) {
+        assert(error instanceof Error, "Expected a configuration error");
+        message = error.message;
+      }
+      assert(
+        message.startsWith(`${source}:`) && message.includes(expected),
+        "Wrong diagnostic category",
+      );
+      assert(
+        !message.includes("private-password") &&
+          !message.includes("db.example.invalid"),
+        "Diagnostic leaked input",
+      );
+      assert(
+        message.includes("unset or empty") === (source === "DATABASE_URL"),
+        "Wrong migration override diagnostic",
+      );
+    }
+  }
+});

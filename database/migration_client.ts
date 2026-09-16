@@ -12,16 +12,45 @@ export function migrationConnectionConfig(
       "Migrations require DATABASE_MIGRATION_URL or DATABASE_URL.",
     );
   }
+  const invalid = (reason: string): never => {
+    const fallback = source === "DATABASE_URL"
+      ? " DATABASE_MIGRATION_URL is unset or empty in this process."
+      : "";
+    // Only fixed explanations are included; never echo any part of the input.
+    throw new Error(`${source}: ${reason}${fallback}`);
+  };
+  if (
+    /^(?:export\s+)?DATABASE_(?:MIGRATION_)?URL\s*=/i.test(connectionString)
+  ) {
+    invalid(
+      "the value contains a variable assignment; enter only the PostgreSQL URL in the Value field.",
+    );
+  }
+  if (/^["'`]/.test(connectionString)) {
+    invalid(
+      "the value starts with a quote; remove surrounding quotes from the Value field.",
+    );
+  }
+  if (/^psql\s/i.test(connectionString)) {
+    invalid(
+      "the value is a psql command; copy only its PostgreSQL connection URL.",
+    );
+  }
+  if (!/^postgres(?:ql)?:\/\//i.test(connectionString)) {
+    invalid("the value must start with postgres:// or postgresql://.");
+  }
   let url: URL;
   try {
     url = new URL(connectionString);
-    if (!["postgres:", "postgresql:"].includes(url.protocol) || !url.hostname) {
-      throw new Error();
-    }
   } catch {
     // A URL parser error can contain the password. Do not include its cause.
-    throw new Error(
-      `${source} must be a PostgreSQL URL with an explicit hostname.`,
+    return invalid(
+      "the PostgreSQL URL cannot be parsed; copy a valid connection URL and percent-encode reserved characters in credentials.",
+    );
+  }
+  if (!url.hostname) {
+    invalid(
+      "the PostgreSQL URL has no hostname; an explicit database hostname is required.",
     );
   }
   if (
