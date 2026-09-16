@@ -298,3 +298,47 @@ disky více instancí nejsou bezpečné.
 
 Podrobnosti k implementovaným kontrolám a zbytkovým rizikům jsou v
 [SECURITY.md](SECURITY.md).
+
+## Diagnostika migrací v Deno Deploy / Neon
+
+Pre-deploy command nastavte na `deno task migrate`. Tento příkaz používá pouze
+proměnné předané prostředím; `.env` automaticky nenačítá. Lokální varianta je
+`deno task migrate:local`, která `.env` načte explicitně. Již exportované
+proměnné mají přednost před `.env`.
+
+Pro migrace lze nastavit `DATABASE_MIGRATION_URL`; pokud chybí, použije se
+`DATABASE_URL`. Běžná aplikace stále používá pouze `DATABASE_URL`. Migrátor
+vytváří vlastní připojení s limitem 1 a po dokončení ho zavře.
+
+U Neonu ponechte aplikaci pooled URL, ale pro `DATABASE_MIGRATION_URL` použijte
+přímý hostname bez `-pooler`. Migrátor používá sessionový `pg_advisory_lock`,
+který transaction pooling nepodporuje; známý Neon pooler proto odmítne ještě
+před připojením. Viz
+[Neon connection pooling](https://neon.com/docs/connect/connection-pooling). Pro
+použitý klient `postgres.js` nastavte URL například takto:
+
+```text
+DATABASE_MIGRATION_URL=postgresql://USER:PASSWORD@DIRECT_HOST/DATABASE?sslmode=verify-full
+```
+
+Nepřidávejte libpq parametr `channel_binding=require`: instalovaný `postgres.js`
+jej nepodporuje a předává ho jako serverový parametr. `sslmode=verify-full`
+zachovává TLS s ověřením certifikátu a hostname; nejde o zapnutí channel
+bindingu.
+
+Při startu migrátor vypíše `Migration database target`: název použité proměnné,
+skutečné hosty/porty po parsování klientem, Deno timeline a ID revize.
+Nevypisuje uživatele, heslo, název databáze ani celý connection string. Pokud
+log uvádí `127.0.0.1`, jde o efektivní konfiguraci tohoto procesu, nikoliv o S3.
+
+Připojení lze ověřit bez aplikování migrací:
+
+```sh
+deno task migrate --check
+# Lokálně s explicitním načtením .env:
+deno task migrate:local --check
+```
+
+Kontrola provede pouze `SELECT 1`. Pokud Neon hostname v diagnostice souhlasí,
+ale samotná chyba stále uvádí localhost, je třeba ověřit DNS/síťové směrování
+běžícího procesu. Samotná hodnota uložená v dashboardu neprokazuje použitý cíl.

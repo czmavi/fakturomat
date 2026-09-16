@@ -189,7 +189,7 @@ Deno.test({
     Deno.env.set("DATABASE_URL", testDatabaseUrl!);
     Deno.env.set("APP_ENV", "test");
     Deno.env.set("STORAGE_LOCAL_ROOT", storageRoot);
-    await migrate();
+    await migrate(getDb());
 
     const sql = getDb();
     const authRepository = new TestAuthRepository(sql);

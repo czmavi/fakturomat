@@ -1,4 +1,5 @@
-import { closeDb, getDb } from "@/database/client.ts";
+import type { Sql } from "postgres";
+import { createMigrationDb } from "@/database/migration_client.ts";
 
 const MIGRATION_PATTERN = /^\d{4}_[a-z0-9_]+\.sql$/;
 const MIGRATION_LOCK_ID = 731_284_091;
@@ -25,8 +26,16 @@ export async function readMigrations(
   return migrations.sort((a, b) => a.version.localeCompare(b.version));
 }
 
-export async function migrate(): Promise<string[]> {
-  const sql = getDb();
+export async function migrate(sql?: Sql): Promise<string[]> {
+  const client = sql ?? createMigrationDb();
+  try {
+    return await applyMigrations(client);
+  } finally {
+    if (!sql) await client.end({ timeout: 5 });
+  }
+}
+
+async function applyMigrations(sql: Sql): Promise<string[]> {
   const migrations = await readMigrations();
   const connection = await sql.reserve();
 
@@ -77,14 +86,22 @@ export async function migrate(): Promise<string[]> {
 }
 
 if (import.meta.main) {
-  try {
+  if (Deno.args.includes("--check")) {
+    const sql = createMigrationDb();
+    try {
+      await sql`SELECT 1`;
+      console.log(
+        "Migration database connection succeeded; no migrations applied.",
+      );
+    } finally {
+      await sql.end({ timeout: 5 });
+    }
+  } else {
     const applied = await migrate();
     if (applied.length === 0) {
       console.log("Database is already up to date.");
     } else {
       console.log(`Applied migrations: ${applied.join(", ")}`);
     }
-  } finally {
-    await closeDb();
   }
 }

@@ -19,10 +19,11 @@ Neukládáme ani ručně nekopírujeme krátkodobé credentials do klienta.
    `./data/storage` nebo hodnotu dosavadního `STORAGE_LOCAL_ROOT`. Původní klíče
    `organizations/.../invoices/...` zůstávají platné. Alternativně překopírujte
    soubory se zachováním relativních cest do nového rootu.
-3. Spusťte `deno task db:migrate`. Migrace `0019_invoice_document_storage.sql`
-   přidá `storage_provider` a nullable `etag`, staré řádky označí jako `local` a
-   odloží validační trigger nového dokumentu na COMMIT. Ochrana proti změně nebo
-   smazání metadat zůstává zachována.
+3. Spusťte `deno task migrate:local`. Migrace
+   `0019_invoice_document_storage.sql` přidá `storage_provider` a nullable
+   `etag`, staré řádky označí jako `local` a odloží validační trigger nového
+   dokumentu na COMMIT. Ochrana proti změně nebo smazání metadat zůstává
+   zachována.
 4. Ověřte stažení známého historického PDF. Zapnutí S3 přesouvá pouze **nové**
    uploady. Staré lokální dokumenty vyžadují dostupný původní disk i po zapnutí
    S3; jejich čtení podle DB provideru není fallback při chybě S3.
@@ -39,7 +40,7 @@ Předpoklad: nakonfigurovaná `.env` podle `.env.example`, běžící PostgreSQL
 účet v aplikaci (základní setup viz README).
 
 ```sh
-deno task db:migrate
+deno task migrate:local
 S3_BUCKET= LOCAL_STORAGE_PATH=./data/documents deno task --env-file=.env dev
 ```
 
@@ -93,7 +94,7 @@ souboru přístup nedostane. Adresář není veřejná static cesta.
 4. Spusťte aplikaci:
 
    ```sh
-   deno task db:migrate
+   deno task migrate:local
    AWS_PROFILE=fakturomat-dev S3_BUCKET=BUCKET_NAME S3_REGION=eu-central-1 deno task --env-file=.env dev
    ```
 

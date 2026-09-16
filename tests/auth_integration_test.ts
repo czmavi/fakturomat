@@ -101,7 +101,7 @@ Deno.test({
     const previousAppEnv = Deno.env.get("APP_ENV");
     Deno.env.set("DATABASE_URL", testDatabaseUrl!);
     Deno.env.set("APP_ENV", "test");
-    await migrate();
+    await migrate(getDb());
 
     const sql = getDb();
     const repository = new TestAuthRepository(sql);
@@ -169,7 +169,7 @@ Deno.test({
   sanitizeResources: false,
   async fn() {
     Deno.env.set("DATABASE_URL", testDatabaseUrl!);
-    await migrate();
+    await migrate(getDb());
 
     const sql = getDb();
     const authRepository = new TestAuthRepository(sql);
@@ -707,7 +707,7 @@ Deno.test({
   sanitizeResources: false,
   async fn() {
     Deno.env.set("DATABASE_URL", testDatabaseUrl!);
-    await migrate();
+    await migrate(getDb());
 
     const sql = getDb();
     const authRepository = new TestAuthRepository(sql);
@@ -913,7 +913,7 @@ Deno.test({
   sanitizeResources: false,
   async fn() {
     Deno.env.set("DATABASE_URL", testDatabaseUrl!);
-    await migrate();
+    await migrate(getDb());
 
     const sql = getDb();
     const authRepository = new TestAuthRepository(sql);
@@ -1368,7 +1368,7 @@ Deno.test({
   sanitizeResources: false,
   async fn() {
     Deno.env.set("DATABASE_URL", testDatabaseUrl!);
-    await migrate();
+    await migrate(getDb());
 
     const sql = getDb();
     const authRepository = new TestAuthRepository(sql);
@@ -1572,7 +1572,7 @@ Deno.test({
   sanitizeResources: false,
   async fn() {
     Deno.env.set("DATABASE_URL", testDatabaseUrl!);
-    await migrate();
+    await migrate(getDb());
 
     const sql = getDb();
     const authRepository = new TestAuthRepository(sql);
@@ -1780,7 +1780,7 @@ Deno.test({
   sanitizeResources: false,
   async fn() {
     Deno.env.set("DATABASE_URL", testDatabaseUrl!);
-    await migrate();
+    await migrate(getDb());
 
     const sql = getDb();
     const authRepository = new TestAuthRepository(sql);

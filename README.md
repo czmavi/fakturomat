@@ -37,7 +37,7 @@ Požadavky: Deno 2.9+ a PostgreSQL. Vývojovou databázi lze spustit přes Docke
 docker compose up -d postgres
 cp .env.example .env
 deno install
-deno task db:migrate
+deno task migrate:local
 deno task user:create
 deno task dev
 ```
