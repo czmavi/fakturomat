@@ -12,6 +12,10 @@ import {
 } from "@/services/security_headers.ts";
 
 export const requestContextMiddleware = define.middleware(async (ctx) => {
+  // Monitoring must not load sessions, write auth state or create cookies.
+  if (ctx.req.method === "GET" && ctx.url.pathname === "/health") {
+    return applySecurityHeaders(await ctx.next(), ctx.url, getAppEnvironment());
+  }
   if (requestContentLengthIsTooLarge(ctx.req)) {
     return applySecurityHeaders(
       new Response("Požadavek je příliš velký.", { status: 413 }),

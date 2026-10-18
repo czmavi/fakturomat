@@ -20,6 +20,7 @@ export interface D1Database {
   exec(query: string): Promise<unknown>;
 }
 export interface R2Bucket {
+  head(key: string): Promise<{ etag: string } | null>;
   put(
     key: string,
     value: Uint8Array,

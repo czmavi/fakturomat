@@ -70,6 +70,11 @@ export class TestD1 implements D1Database {
 }
 export class TestR2 implements R2Bucket {
   readonly objects = new Map<string, Uint8Array>();
+  head(key: string) {
+    return Promise.resolve(
+      this.objects.has(key) ? { etag: "test-etag" } : null,
+    );
+  }
   put(
     key: string,
     value: Uint8Array,
