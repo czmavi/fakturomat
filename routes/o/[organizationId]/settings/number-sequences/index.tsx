@@ -5,7 +5,7 @@ import {
   formatInvoiceNumber,
   type InvoiceNumberSequence,
 } from "@/domain/invoices/number_sequence_types.ts";
-import { PostgresInvoiceNumberSequenceRepository } from "@/repositories/invoice_number_sequence_repository.ts";
+import { D1InvoiceNumberSequenceRepository } from "@/repositories/invoice_number_sequence_repository.ts";
 
 interface PageData {
   sequences: InvoiceNumberSequence[];
@@ -13,7 +13,7 @@ interface PageData {
 
 export const handler = define.handlers<PageData>({
   async GET(ctx) {
-    const sequences = await new PostgresInvoiceNumberSequenceRepository()
+    const sequences = await new D1InvoiceNumberSequenceRepository()
       .listForUser(ctx.params.organizationId, ctx.state.user!.id);
     return page({ sequences });
   },

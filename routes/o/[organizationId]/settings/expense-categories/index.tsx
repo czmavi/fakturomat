@@ -2,7 +2,7 @@ import { page } from "fresh";
 import { Head } from "fresh/runtime";
 import { define } from "@/utils.ts";
 import type { ExpenseCategory } from "@/domain/expenses/types.ts";
-import { PostgresExpenseCategoryRepository } from "@/repositories/expense_category_repository.ts";
+import { D1ExpenseCategoryRepository } from "@/repositories/expense_category_repository.ts";
 
 interface PageData {
   categories: ExpenseCategory[];
@@ -10,7 +10,7 @@ interface PageData {
 
 export const handler = define.handlers<PageData>({
   async GET(ctx) {
-    const categories = await new PostgresExpenseCategoryRepository()
+    const categories = await new D1ExpenseCategoryRepository()
       .listForUser(
         ctx.params.organizationId,
         ctx.state.user!.id,

@@ -1,4 +1,5 @@
-import type { Sql } from "postgres";
+import { money } from "@/database/d1.ts";
+import type { Sql } from "@/database/d1.ts";
 import { getDb } from "@/database/client.ts";
 import type {
   BankProviderType,
@@ -77,8 +78,7 @@ export interface BankTransactionRepository {
   }): Promise<boolean>;
 }
 
-export class PostgresBankTransactionRepository
-  implements BankTransactionRepository {
+export class D1BankTransactionRepository implements BankTransactionRepository {
   constructor(private readonly sql: Sql = getDb()) {}
 
   async listForUser(input: {
@@ -96,8 +96,8 @@ export class PostgresBankTransactionRepository
         bank_transactions.bank_account_id,
         bank_accounts.name AS bank_account_name, bank_transactions.provider,
         bank_transactions.provider_transaction_id,
-        bank_transactions.booking_date::text AS booking_date,
-        bank_transactions.amount::text AS amount, bank_transactions.currency,
+        bank_transactions.booking_date AS booking_date,
+        bank_transactions.amount AS amount, bank_transactions.currency,
         bank_transactions.counterparty_account,
         bank_transactions.counterparty_bank_code,
         bank_transactions.counterparty_name,
@@ -113,16 +113,16 @@ export class PostgresBankTransactionRepository
         ON memberships.organization_id = bank_transactions.organization_id
       WHERE bank_transactions.organization_id = ${input.organizationId}
         AND memberships.user_id = ${input.userId}
-        AND (${input.bankAccountId}::uuid IS NULL
+        AND (${input.bankAccountId} IS NULL
           OR bank_transactions.bank_account_id = ${input.bankAccountId})
         AND (
           ${input.direction} = 'ALL'
           OR (${input.direction} = 'INCOMING' AND bank_transactions.amount > 0)
           OR (${input.direction} = 'OUTGOING' AND bank_transactions.amount < 0)
         )
-        AND (${input.dateFrom}::date IS NULL
+        AND (${input.dateFrom} IS NULL
           OR bank_transactions.booking_date >= ${input.dateFrom})
-        AND (${input.dateTo}::date IS NULL
+        AND (${input.dateTo} IS NULL
           OR bank_transactions.booking_date <= ${input.dateTo})
       ORDER BY bank_transactions.booking_date DESC,
         bank_transactions.created_at DESC, bank_transactions.id
@@ -150,13 +150,14 @@ export class PostgresBankTransactionRepository
           AND bank_connections.provider = ${input.provider}
           AND bank_connections.status <> 'DISABLED'
           AND memberships.user_id = ${input.userId}
-        FOR UPDATE OF bank_connections
+
       `;
       if (!connections[0]) return null;
 
-      let inserted = 0;
+      const inserts: import("@/database/d1.ts").Pending<{ id: string }[]>[] =
+        [];
       for (const item of input.transactions) {
-        const rows = await transaction<{ id: string }[]>`
+        const rows = transaction.queue(transaction<{ id: string }[]>`
           INSERT INTO bank_transactions (
             id, organization_id, bank_account_id, provider,
             provider_transaction_id, booking_date, amount, currency,
@@ -166,7 +167,9 @@ export class PostgresBankTransactionRepository
           ) VALUES (
             ${crypto.randomUUID()}, ${input.organizationId},
             ${input.bankAccountId}, ${input.provider},
-            ${item.providerTransactionId}, ${item.bookingDate}, ${item.amount},
+            ${item.providerTransactionId}, ${item.bookingDate}, ${
+          money(item.amount)
+        },
             ${item.currency}, ${item.counterpartyAccount},
             ${item.counterpartyBankCode}, ${item.counterpartyName},
             ${item.variableSymbol}, ${item.constantSymbol},
@@ -176,21 +179,23 @@ export class PostgresBankTransactionRepository
           ON CONFLICT (provider, bank_account_id, provider_transaction_id)
             DO NOTHING
           RETURNING id
-        `;
-        inserted += rows.length;
+        `);
+        inserts.push(rows);
       }
 
-      await transaction`
+      transaction.queue(transaction`
         UPDATE bank_connections
-        SET status = 'ACTIVE', last_sync_at = now(),
-          current_balance = ${input.balance?.amount ?? null},
+        SET status = 'ACTIVE', last_sync_at = CAST(unixepoch('subsec') * 1000 AS INTEGER),
+          current_balance = ${money(input.balance?.amount ?? null)},
           balance_currency = ${input.balance?.currency ?? null},
           balance_date = ${input.balance?.date ?? null},
-          updated_at = now()
+          updated_at = CAST(unixepoch('subsec') * 1000 AS INTEGER)
         WHERE id = ${connections[0].id}
           AND organization_id = ${input.organizationId}
-      `;
-      return { inserted };
+      `);
+      return transaction.after(() => ({
+        inserted: inserts.reduce((sum, result) => sum + result.value.length, 0),
+      }));
     });
   }
 
@@ -202,7 +207,7 @@ export class PostgresBankTransactionRepository
   }): Promise<boolean> {
     const rows = await this.sql<{ id: string }[]>`
       UPDATE bank_connections
-      SET status = 'ERROR', updated_at = now()
+      SET status = 'ERROR', updated_at = CAST(unixepoch('subsec') * 1000 AS INTEGER)
       WHERE organization_id = ${input.organizationId}
         AND bank_account_id = ${input.bankAccountId}
         AND provider = ${input.provider}

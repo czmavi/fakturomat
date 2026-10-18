@@ -4,7 +4,7 @@ import { define } from "@/utils.ts";
 import type { Contact } from "@/domain/contacts/types.ts";
 import { contactTypeLabel } from "@/domain/contacts/types.ts";
 import { isUuid } from "@/domain/organizations/types.ts";
-import { PostgresContactRepository } from "@/repositories/contact_repository.ts";
+import { D1ContactRepository } from "@/repositories/contact_repository.ts";
 
 interface ContactDetailData {
   contact: Contact;
@@ -16,7 +16,7 @@ export const handler = define.handlers<ContactDetailData>({
     if (!isUuid(ctx.params.contactId)) {
       return new Response("Stránka nebyla nalezena.", { status: 404 });
     }
-    const contact = await new PostgresContactRepository().findForUser(
+    const contact = await new D1ContactRepository().findForUser(
       ctx.params.organizationId,
       ctx.params.contactId,
       ctx.state.user!.id,

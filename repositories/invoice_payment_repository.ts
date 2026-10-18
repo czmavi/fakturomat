@@ -1,4 +1,5 @@
-import type { Sql } from "postgres";
+import { money } from "@/database/d1.ts";
+import type { Sql } from "@/database/d1.ts";
 import { getDb } from "@/database/client.ts";
 import type {
   InvoicePayment,
@@ -97,13 +98,12 @@ export interface InvoicePaymentRepository {
 const PAYMENT_SELECT = `
   invoice_payments.id, invoice_payments.organization_id,
   invoice_payments.invoice_id, invoices.number AS invoice_number,
-  invoice_payments.bank_transaction_id, invoice_payments.amount::text,
+  invoice_payments.bank_transaction_id, invoice_payments.amount,
   invoice_payments.match_type, invoice_payments.created_by,
   invoice_payments.created_at
 `;
 
-export class PostgresInvoicePaymentRepository
-  implements InvoicePaymentRepository {
+export class D1InvoicePaymentRepository implements InvoicePaymentRepository {
   constructor(private readonly sql: Sql = getDb()) {}
 
   async autoMatchForUser(input: {
@@ -130,11 +130,11 @@ export class PostgresInvoicePaymentRepository
         }>
       >`
         SELECT bank_transactions.id, bank_transactions.variable_symbol,
-          bank_transactions.currency, bank_transactions.amount::text,
-          bank_transactions.booking_date::text
+          bank_transactions.currency, bank_transactions.amount,
+          bank_transactions.booking_date
         FROM bank_transactions
         WHERE bank_transactions.organization_id = ${input.organizationId}
-          AND (${input.bankAccountId}::uuid IS NULL
+          AND (${input.bankAccountId} IS NULL
             OR bank_transactions.bank_account_id = ${input.bankAccountId})
           AND bank_transactions.amount > 0
           AND bank_transactions.variable_symbol IS NOT NULL
@@ -143,47 +143,51 @@ export class PostgresInvoicePaymentRepository
             WHERE invoice_payments.bank_transaction_id = bank_transactions.id
           )
         ORDER BY bank_transactions.booking_date, bank_transactions.id
-        FOR UPDATE OF bank_transactions SKIP LOCKED
+
       `;
 
       let matched = 0;
+      const matchedInvoices = new Set<string>();
       for (const bankTransaction of bankTransactions) {
         const invoices = await transaction<
           Array<{ id: string; total: string }>
         >`
-          SELECT invoices.id, invoices.total::text
+          SELECT invoices.id, invoices.total
           FROM invoices
           WHERE invoices.organization_id = ${input.organizationId}
             AND invoices.status = 'ISSUED'
             AND invoices.variable_symbol = ${bankTransaction.variable_symbol}
             AND invoices.currency = ${bankTransaction.currency}
-            AND invoices.total = ${bankTransaction.amount}
+            AND invoices.total = ${money(bankTransaction.amount)}
             AND NOT EXISTS (
               SELECT 1 FROM invoice_payments
               WHERE invoice_payments.invoice_id = invoices.id
             )
           ORDER BY invoices.issue_date, invoices.id
           LIMIT 2
-          FOR UPDATE OF invoices SKIP LOCKED
+
         `;
-        if (invoices.length !== 1) continue;
-        await transaction`
+        if (invoices.length !== 1 || matchedInvoices.has(invoices[0].id)) {
+          continue;
+        }
+        matchedInvoices.add(invoices[0].id);
+        transaction.queue(transaction`
           INSERT INTO invoice_payments (
             id, organization_id, invoice_id, bank_transaction_id, amount,
             match_type, created_by
           ) VALUES (
             ${crypto.randomUUID()}, ${input.organizationId}, ${invoices[0].id},
-            ${bankTransaction.id}, ${invoices[0].total}, 'AUTO', NULL
+            ${bankTransaction.id}, ${money(invoices[0].total)}, 'AUTO', NULL
           )
-        `;
-        await transaction`
+        `);
+        transaction.queue(transaction`
           UPDATE invoices
-          SET status = 'PAID', paid_at = ${bankTransaction.booking_date}::date,
-            updated_at = now()
+          SET status = 'PAID', paid_at = ${bankTransaction.booking_date},
+            updated_at = CAST(unixepoch('subsec') * 1000 AS INTEGER)
           WHERE id = ${invoices[0].id}
             AND organization_id = ${input.organizationId}
             AND status = 'ISSUED'
-        `;
+        `);
         matched++;
       }
       return matched;
@@ -196,81 +200,81 @@ export class PostgresInvoicePaymentRepository
     bankTransactionId: string;
     invoiceId: string;
   }): Promise<ManualInvoiceMatchResult> {
-    return await this.sql.begin(async (transaction) => {
-      const access = await transaction<{ allowed: boolean }[]>`
+    return await this.sql.begin<ManualInvoiceMatchResult>(
+      async (transaction) => {
+        const access = await transaction<{ allowed: boolean }[]>`
         SELECT EXISTS (
           SELECT 1 FROM organization_memberships
           WHERE organization_id = ${input.organizationId}
             AND user_id = ${input.userId}
         ) AS allowed
       `;
-      if (!access[0].allowed) return { kind: "not_found" };
+        if (!access[0].allowed) return { kind: "not_found" };
 
-      const bankTransactions = await transaction<
-        Array<{
-          amount: string;
-          currency: string;
-          booking_date: string;
-        }>
-      >`
-        SELECT amount::text, currency, booking_date::text
+        const bankTransactions = await transaction<
+          Array<{
+            amount: string;
+            currency: string;
+            booking_date: string;
+          }>
+        >`
+        SELECT amount, currency, booking_date
         FROM bank_transactions
         WHERE id = ${input.bankTransactionId}
           AND organization_id = ${input.organizationId}
           AND amount > 0
-        FOR UPDATE
+
       `;
-      const invoices = await transaction<
-        Array<{ total: string; currency: string; number: string }>
-      >`
-        SELECT total::text, currency, number
+        const invoices = await transaction<
+          Array<{ total: string; currency: string; number: string }>
+        >`
+        SELECT total, currency, number
         FROM invoices
         WHERE id = ${input.invoiceId}
           AND organization_id = ${input.organizationId}
           AND status = 'ISSUED'
-        FOR UPDATE
-      `;
-      const bankTransaction = bankTransactions[0];
-      const invoice = invoices[0];
-      if (!bankTransaction || !invoice) return { kind: "not_found" };
-      if (bankTransaction.currency !== invoice.currency) {
-        return { kind: "not_matchable" };
-      }
 
-      const amounts = await transaction<
-        Array<{ transaction_remaining: string; invoice_remaining: string }>
-      >`
+      `;
+        const bankTransaction = bankTransactions[0];
+        const invoice = invoices[0];
+        if (!bankTransaction || !invoice) return { kind: "not_found" };
+        if (bankTransaction.currency !== invoice.currency) {
+          return { kind: "not_matchable" };
+        }
+
+        const amounts = await transaction<
+          Array<{ transaction_remaining: string; invoice_remaining: string }>
+        >`
         SELECT
-          (${bankTransaction.amount}::numeric - COALESCE((
+          (${money(bankTransaction.amount)} - COALESCE((
             SELECT SUM(amount) FROM invoice_payments
             WHERE bank_transaction_id = ${input.bankTransactionId}
-          ), 0))::text AS transaction_remaining,
-          (${invoice.total}::numeric - COALESCE((
+          ), 0)) AS transaction_remaining,
+          (${money(invoice.total)} - COALESCE((
             SELECT SUM(amount) FROM invoice_payments
             WHERE invoice_id = ${input.invoiceId}
-          ), 0))::text AS invoice_remaining
+          ), 0)) AS invoice_remaining
       `;
-      const inserted = await transaction<PaymentRow[]>`
+        const inserted = transaction.queue(transaction<PaymentRow[]>`
         INSERT INTO invoice_payments (
           id, organization_id, invoice_id, bank_transaction_id, amount,
           match_type, created_by
         )
         SELECT ${crypto.randomUUID()}, ${input.organizationId},
           ${input.invoiceId}, ${input.bankTransactionId},
-          LEAST(
-            ${amounts[0].transaction_remaining}::numeric,
-            ${amounts[0].invoice_remaining}::numeric
+          MIN(
+            ${money(amounts[0].transaction_remaining)},
+            ${money(amounts[0].invoice_remaining)}
           ), 'MANUAL', ${input.userId}
-        WHERE ${amounts[0].transaction_remaining}::numeric > 0
-          AND ${amounts[0].invoice_remaining}::numeric > 0
+        WHERE ${money(amounts[0].transaction_remaining)} > 0
+          AND ${money(amounts[0].invoice_remaining)} > 0
         ON CONFLICT (invoice_id, bank_transaction_id) DO NOTHING
         RETURNING id, organization_id, invoice_id,
-          ${invoice.number}::text AS invoice_number,
-          bank_transaction_id, amount::text, match_type, created_by, created_at
-      `;
-      if (!inserted[0]) return { kind: "not_matchable" };
+          ${invoice.number} AS invoice_number,
+          bank_transaction_id, amount, match_type, created_by, created_at
+      `);
 
-      await transaction`
+        transaction.queue(transaction`
         UPDATE invoices
         SET status = CASE
               WHEN (
@@ -283,15 +287,23 @@ export class PostgresInvoicePaymentRepository
             WHEN (
               SELECT COALESCE(SUM(amount), 0) FROM invoice_payments
               WHERE invoice_id = ${input.invoiceId}
-            ) >= total THEN ${bankTransaction.booking_date}::date
+            ) >= total THEN ${bankTransaction.booking_date}
             ELSE NULL
           END,
-          updated_at = now()
+          updated_at = CAST(unixepoch('subsec') * 1000 AS INTEGER)
         WHERE id = ${input.invoiceId}
           AND organization_id = ${input.organizationId}
-      `;
-      return { kind: "matched", payment: paymentFromRow(inserted[0]) };
-    });
+      `);
+        return transaction.after(() =>
+          inserted.value[0]
+            ? {
+              kind: "matched" as const,
+              payment: paymentFromRow(inserted.value[0]),
+            }
+            : { kind: "not_matchable" as const }
+        );
+      },
+    );
   }
 
   async unmatchForUser(input: {
@@ -322,27 +334,27 @@ export class PostgresInvoicePaymentRepository
         SELECT id FROM bank_transactions
         WHERE id = ${payment.bank_transaction_id}
           AND organization_id = ${input.organizationId}
-        FOR UPDATE
+
       `;
       await transaction`
         SELECT id FROM invoices
         WHERE id = ${payment.invoice_id}
           AND organization_id = ${input.organizationId}
-        FOR UPDATE
+
       `;
       const lockedPayments = await transaction<{ id: string }[]>`
         SELECT id FROM invoice_payments
         WHERE id = ${payment.id}
           AND organization_id = ${input.organizationId}
-        FOR UPDATE
+
       `;
       if (!lockedPayments[0]) return false;
-      await transaction`
+      transaction.queue(transaction`
         DELETE FROM invoice_payments
         WHERE id = ${payment.id}
           AND organization_id = ${input.organizationId}
-      `;
-      await transaction`
+      `);
+      transaction.queue(transaction`
         UPDATE invoices
         SET status = CASE
               WHEN (
@@ -358,11 +370,11 @@ export class PostgresInvoicePaymentRepository
             ) >= total THEN paid_at
             ELSE NULL
           END,
-          updated_at = now()
+          updated_at = CAST(unixepoch('subsec') * 1000 AS INTEGER)
         WHERE id = ${payment.invoice_id}
           AND organization_id = ${input.organizationId}
           AND status IN ('ISSUED', 'PAID')
-      `;
+      `);
       return true;
     });
   }
@@ -426,9 +438,9 @@ export class PostgresInvoicePaymentRepository
       SELECT invoices.id, invoices.number,
         COALESCE(invoices.customer_snapshot->>'name', contacts.name)
           AS contact_name,
-        invoices.variable_symbol, invoices.currency, invoices.total::text,
-        COALESCE(SUM(invoice_payments.amount), 0)::text AS paid_amount,
-        (invoices.total - COALESCE(SUM(invoice_payments.amount), 0))::text
+        invoices.variable_symbol, invoices.currency, invoices.total,
+        COALESCE(SUM(invoice_payments.amount), 0) AS paid_amount,
+        (invoices.total - COALESCE(SUM(invoice_payments.amount), 0))
           AS remaining_amount
       FROM invoices
       JOIN contacts

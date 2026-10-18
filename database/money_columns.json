@@ -1,0 +1,29 @@
+{
+  "invoices": [
+    "subtotal",
+    "total"
+  ],
+  "invoice_items": [
+    "unit_price",
+    "total"
+  ],
+  "expenses": [
+    "total_amount"
+  ],
+  "expense_vat_lines": [
+    "base_amount",
+    "vat_amount"
+  ],
+  "bank_connections": [
+    "current_balance"
+  ],
+  "bank_transactions": [
+    "amount"
+  ],
+  "invoice_payments": [
+    "amount"
+  ],
+  "expense_payments": [
+    "amount"
+  ]
+}

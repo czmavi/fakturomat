@@ -6,8 +6,8 @@ import InvoiceForm, {
 } from "@/components/InvoiceForm.tsx";
 import type { InvoiceDraftFormInput } from "@/domain/invoices/types.ts";
 import type { InvoiceFormOptions } from "@/components/InvoiceForm.tsx";
-import { PostgresInvoiceRepository } from "@/repositories/invoice_repository.ts";
-import { PostgresOrganizationSettingsRepository } from "@/repositories/organization_settings_repository.ts";
+import { D1InvoiceRepository } from "@/repositories/invoice_repository.ts";
+import { D1OrganizationSettingsRepository } from "@/repositories/organization_settings_repository.ts";
 import { isValidCsrfToken } from "@/services/csrf_service.ts";
 import { loadInvoiceFormOptions } from "@/services/invoice_form_options.ts";
 import {
@@ -40,7 +40,7 @@ export const handler = define.handlers<PageData>({
     const organizationId = ctx.params.organizationId;
     const userId = ctx.state.user!.id;
     const [settings, options] = await Promise.all([
-      new PostgresOrganizationSettingsRepository().findForUser(
+      new D1OrganizationSettingsRepository().findForUser(
         organizationId,
         userId,
       ),
@@ -96,7 +96,7 @@ export const handler = define.handlers<PageData>({
       );
     }
     try {
-      const invoice = await new InvoiceService(new PostgresInvoiceRepository())
+      const invoice = await new InvoiceService(new D1InvoiceRepository())
         .createDraft({
           ...values,
           organizationId: ctx.params.organizationId,

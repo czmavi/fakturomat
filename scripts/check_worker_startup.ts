@@ -1,0 +1,226 @@
+import { convertV4MiniflareOptions, Miniflare } from "miniflare";
+import { resolve } from "node:path";
+import { hashPassword } from "better-auth/crypto";
+
+// Keep semicolons in quoted SQL and complete CREATE TRIGGER bodies together.
+export function splitSql(source: string): string[] {
+  const result: string[] = [];
+  let part = "";
+  let quote = false;
+  let comment = false;
+  for (let i = 0; i < source.length; i++) {
+    const c = source[i];
+    if (comment) {
+      if (c === "\n") comment = false;
+      else continue;
+    }
+    if (!quote && c === "-" && source[i + 1] === "-") {
+      comment = true;
+      i++;
+      continue;
+    }
+    part += c;
+    if (c === "'") {
+      if (quote && source[i + 1] === "'") {
+        part += source[++i];
+        continue;
+      }
+      quote = !quote;
+    }
+    if (
+      c === ";" && !quote &&
+      (!/^\s*CREATE TRIGGER/i.test(part) || /\bEND;\s*$/i.test(part))
+    ) {
+      result.push(part.trim());
+      part = "";
+    }
+  }
+  if (part.trim()) result.push(part.trim());
+  return result;
+}
+if (import.meta.main) {
+  const modules: { type: "ESModule"; path: string }[] = [{
+    type: "ESModule",
+    path: resolve("_fresh/server/index.mjs"),
+  }];
+  for await (const entry of Deno.readDir("_fresh/server/assets")) {
+    if (entry.name.endsWith(".mjs")) {
+      modules.push({
+        type: "ESModule",
+        path: resolve("_fresh/server/assets", entry.name),
+      });
+    }
+  }
+  const mf = new Miniflare(convertV4MiniflareOptions({
+    modules,
+    modulesRoot: resolve("_fresh/server"),
+    compatibilityDate: "2026-10-18",
+    compatibilityFlags: ["nodejs_compat"],
+    assets: {
+      directory: resolve("_fresh/client"),
+      routerConfig: { has_user_worker: true },
+    },
+    d1Databases: ["DB"],
+    r2Buckets: ["DOCUMENTS", "FILES"],
+    bindings: {
+      APP_ENV: "production",
+      BETTER_AUTH_URL: "https://fakturomat.test",
+      BETTER_AUTH_SECRET: "synthetic-worker-test-secret-at-least-32-characters",
+      BANK_CREDENTIALS_ENCRYPTION_KEY: btoa("a".repeat(32)),
+    },
+  }));
+  try {
+    const db = await mf.getD1Database("DB");
+    for (const file of ["0001_schema.sql", "0002_integrity.sql"]) {
+      const sql = await Deno.readTextFile(
+        new URL(`../migrations/d1/${file}`, import.meta.url),
+      );
+      for (const statement of splitSql(sql)) await db.prepare(statement).run();
+    }
+    const id = crypto.randomUUID();
+    const password = "worker-test-password";
+    await db.batch([
+      db.prepare(
+        "INSERT INTO users(id,email,display_name,email_verified) VALUES (?,?,?,1)",
+      ).bind(id, "worker@example.test", "Worker"),
+      db.prepare(
+        "INSERT INTO auth_accounts(id,account_id,provider_id,user_id,password) VALUES (?,?,?,?,?)",
+      ).bind(
+        crypto.randomUUID(),
+        id,
+        "credential",
+        id,
+        await hashPassword(password),
+      ),
+    ]);
+    const page = await mf.dispatchFetch("https://fakturomat.test/login");
+    const html = await page.text();
+    if (page.status !== 200 || !html.includes("<form")) {
+      throw new Error(
+        `Worker login page failed (${page.status}): ${html.slice(0, 1000)}`,
+      );
+    }
+    const response = await mf.dispatchFetch(
+      "https://fakturomat.test/api/auth/sign-in/email",
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          origin: "https://fakturomat.test",
+          "cf-connecting-ip": "192.0.2.1",
+        },
+        body: JSON.stringify({ email: "worker@example.test", password }),
+      },
+    );
+    if (response.status !== 200) {
+      throw new Error(
+        `Worker sign-in failed (${response.status}): ${await response.text()}`,
+      );
+    }
+    const cookie = response.headers.get("set-cookie")!;
+    const dashboard = await mf.dispatchFetch(
+      "https://fakturomat.test/dashboard",
+      { headers: { cookie }, redirect: "manual" },
+    );
+    if (![200, 302, 303].includes(dashboard.status)) {
+      throw new Error(`Authenticated dashboard failed: ${dashboard.status}`);
+    }
+    await dashboard.body?.cancel();
+    const org = crypto.randomUUID(),
+      contact = crypto.randomUUID(),
+      bank = crypto.randomUUID(),
+      sequence = crypto.randomUUID(),
+      invoice = crypto.randomUUID();
+    await db.batch([
+      db.prepare(
+        "INSERT INTO organizations(id,type,official_name,display_name) VALUES (?,'SRO','Worker s.r.o.','Worker')",
+      ).bind(org),
+      db.prepare(
+        "INSERT INTO organization_memberships(organization_id,user_id,role) VALUES (?,?,'OWNER')",
+      ).bind(org, id),
+      db.prepare(
+        "INSERT INTO contacts(id,organization_id,type,name) VALUES (?,?,'COMPANY','Český odběratel')",
+      ).bind(contact, org),
+      db.prepare(
+        "INSERT INTO bank_accounts(id,organization_id,name,account_number,bank_code,currency) VALUES (?,?,'Fio','123456789','2010','CZK')",
+      ).bind(bank, org),
+      db.prepare(
+        "INSERT INTO invoice_number_sequences(id,organization_id,name) VALUES (?,?,'Výchozí')",
+      ).bind(sequence, org),
+      db.prepare(
+        "INSERT INTO invoices(id,organization_id,contact_id,number_sequence_id,bank_account_id,invoice_template_id,issue_date,due_date,currency,subtotal,total) VALUES (?,?,?,?,?,'10000000-0000-4000-8000-000000000001','2026-10-18','2026-10-31','CZK',2000,2000)",
+      ).bind(invoice, org, contact, sequence, bank),
+      db.prepare(
+        "INSERT INTO invoice_items(id,invoice_id,description,quantity,unit,unit_price,total,position) VALUES (?,?,'Příliš žluťoučký kůň','2','ks',1000,2000,1)",
+      ).bind(crypto.randomUUID(), invoice),
+    ]);
+    const token = "a".repeat(43);
+    const sessionCookies = response.headers.getSetCookie().map((value) =>
+      value.split(";")[0]
+    ).filter((value) => !value.startsWith("fakturomat_csrf="));
+    const requestCookie = sessionCookies.join("; ") +
+      `; fakturomat_csrf=${token}`;
+    const issue = await mf.dispatchFetch(
+      `https://fakturomat.test/o/${org}/invoices/${invoice}/issue`,
+      {
+        method: "POST",
+        headers: {
+          cookie: requestCookie,
+          origin: "https://fakturomat.test",
+          "content-type": "application/x-www-form-urlencoded",
+        },
+        body: new URLSearchParams({ csrf_token: token }).toString(),
+        redirect: "manual",
+      },
+    );
+    if (
+      issue.status !== 303 ||
+      !issue.headers.get("location")?.includes("issued=1")
+    ) {
+      throw new Error(
+        `Worker PDF issuance failed: ${issue.status} ${
+          issue.headers.get("location")
+        } ${await issue.text()}`,
+      );
+    }
+    await issue.body?.cancel();
+    const pdf = await mf.dispatchFetch(
+      `https://fakturomat.test/o/${org}/invoices/${invoice}/document.pdf`,
+      { headers: { cookie: requestCookie } },
+    );
+    if (
+      pdf.status !== 200 ||
+      pdf.headers.get("content-type") !== "application/pdf" ||
+      (await pdf.arrayBuffer()).byteLength < 1000
+    ) throw new Error("Worker PDF download failed");
+    const denied = await mf.dispatchFetch(
+      `https://fakturomat.test/o/${org}/invoices/${invoice}/document.pdf`,
+      { redirect: "manual" },
+    );
+    if (denied.status === 200) throw new Error("Anonymous PDF leak");
+    await denied.body?.cancel();
+    const bucket = await mf.getR2Bucket("DOCUMENTS") as unknown as {
+      put(
+        key: string,
+        value: string,
+        options: { onlyIf: { etagDoesNotMatch: string } },
+      ): Promise<unknown>;
+      get(key: string): Promise<{ text(): Promise<string> } | null>;
+    };
+    await bucket.put("check.pdf", "%PDF-test", {
+      onlyIf: { etagDoesNotMatch: "*" },
+    });
+    const duplicate = await bucket.put("check.pdf", "overwritten", {
+      onlyIf: { etagDoesNotMatch: "*" },
+    });
+    if (
+      duplicate !== null ||
+      await (await bucket.get("check.pdf"))?.text() !== "%PDF-test"
+    ) throw new Error("R2 conditional put failed");
+    console.log(
+      "Worker smoke passed: real workerd, D1 schema, scrypt login/session, SSR, invoice issuance with embedded fonts, authenticated PDF download and conditional R2 writes.",
+    );
+  } finally {
+    await mf.dispose();
+  }
+}

@@ -6,7 +6,7 @@ import type {
   InvoiceTemplateVersion,
 } from "@/domain/invoices/template_types.ts";
 import { isUuid } from "@/domain/organizations/types.ts";
-import { PostgresInvoiceTemplateRepository } from "@/repositories/invoice_template_repository.ts";
+import { D1InvoiceTemplateRepository } from "@/repositories/invoice_template_repository.ts";
 
 interface PageData {
   template: InvoiceTemplate;
@@ -18,7 +18,7 @@ export const handler = define.handlers<PageData>({
     if (!isUuid(ctx.params.templateId)) {
       return new Response("Stránka nebyla nalezena.", { status: 404 });
     }
-    const repository = new PostgresInvoiceTemplateRepository();
+    const repository = new D1InvoiceTemplateRepository();
     const scope = {
       organizationId: ctx.state.currentOrganization!.id,
       userId: ctx.state.user!.id,

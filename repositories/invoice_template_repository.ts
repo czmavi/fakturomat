@@ -1,4 +1,4 @@
-import type { Sql } from "postgres";
+import type { Sql } from "@/database/d1.ts";
 import { getDb } from "@/database/client.ts";
 import type {
   InvoiceTemplate,
@@ -106,8 +106,7 @@ function versionFromRow(row: VersionRow): InvoiceTemplateVersion {
   };
 }
 
-export class PostgresInvoiceTemplateRepository
-  implements InvoiceTemplateRepository {
+export class D1InvoiceTemplateRepository implements InvoiceTemplateRepository {
   constructor(private readonly sql: Sql = getDb()) {}
 
   async listForUser(scope: TemplateScope): Promise<InvoiceTemplate[]> {
@@ -231,39 +230,28 @@ export class PostgresInvoiceTemplateRepository
       `;
       if (!memberships[0].allowed) return null;
 
-      await transaction`
+      transaction.queue(transaction`
         INSERT INTO invoice_templates (
           id, organization_id, name, description
         ) VALUES (
           ${input.id}, ${input.organizationId}, ${input.name},
           ${input.description}
         )
-      `;
-      await transaction`
+      `);
+      transaction.queue(transaction`
         INSERT INTO invoice_template_versions (
           id, invoice_template_id, version, html, css, created_by
         ) VALUES (
           ${input.versionId}, ${input.id}, 1, ${input.html}, ${input.css},
           ${input.createdBy}
         )
-      `;
-      await transaction`
+      `);
+      transaction.queue(transaction`
         UPDATE invoice_templates
-        SET current_version_id = ${input.versionId}, updated_at = now()
+        SET current_version_id = ${input.versionId}, updated_at = CAST(unixepoch('subsec') * 1000 AS INTEGER)
         WHERE id = ${input.id}
-      `;
-      const rows = await transaction.unsafe<TemplateRow[]>(
-        `
-        SELECT ${TEMPLATE_SELECT}
-        FROM invoice_templates AS templates
-        JOIN invoice_template_versions AS versions
-          ON versions.id = templates.current_version_id
-          AND versions.invoice_template_id = templates.id
-        WHERE templates.id = $1
-      `,
-        [input.id],
-      );
-      return templateFromRow(rows[0]);
+      `);
+      return transaction.after(() => this.findForUser(input.id, input));
     });
   }
 
@@ -306,19 +294,20 @@ export class PostgresInvoiceTemplateRepository
             organization_id IS NULL
             OR organization_id = ${input.organizationId}
           )
-        FOR UPDATE
+
       `;
       const source = sources[0];
       if (!source) return null;
 
       let targetTemplateId = source.id;
+      let copied = false;
       if (source.organization_id === null) {
         const existingCopies = await transaction<{ id: string }[]>`
           SELECT id
           FROM invoice_templates
           WHERE organization_id = ${input.organizationId}
             AND source_template_id = ${source.id}
-          FOR UPDATE
+
         `;
         if (existingCopies[0]) {
           targetTemplateId = existingCopies[0].id;
@@ -336,47 +325,52 @@ export class PostgresInvoiceTemplateRepository
           }
 
           targetTemplateId = input.copyTemplateId;
-          await transaction`
+          copied = true;
+          transaction.queue(transaction`
             INSERT INTO invoice_templates (
               id, organization_id, source_template_id, name, description
             ) VALUES (
               ${targetTemplateId}, ${input.organizationId}, ${source.id},
               ${source.name}, ${source.description}
             )
-          `;
-          await transaction`
+          `);
+          transaction.queue(transaction`
             INSERT INTO invoice_template_versions (
               id, invoice_template_id, version, html, css, created_by
             ) VALUES (
               ${input.copyBaseVersionId}, ${targetTemplateId}, 1,
               ${base.html}, ${base.css}, ${input.createdBy}
             )
-          `;
-          await transaction`
+          `);
+          transaction.queue(transaction`
             UPDATE invoice_templates
             SET current_version_id = ${input.copyBaseVersionId},
-              updated_at = now()
+              updated_at = CAST(unixepoch('subsec') * 1000 AS INTEGER)
             WHERE id = ${targetTemplateId}
-          `;
+          `);
         }
-        await transaction`
+        transaction.queue(transaction`
           UPDATE organizations
           SET default_invoice_template_id = ${targetTemplateId},
-            updated_at = now()
+            updated_at = CAST(unixepoch('subsec') * 1000 AS INTEGER)
           WHERE id = ${input.organizationId}
             AND default_invoice_template_id = ${source.id}
-        `;
+        `);
       }
 
-      const targets = await transaction<{ current_version_id: string }[]>`
+      const targets = copied
+        ? [{ current_version_id: input.copyBaseVersionId }]
+        : await transaction<{ current_version_id: string }[]>`
         SELECT current_version_id
         FROM invoice_templates
         WHERE id = ${targetTemplateId}
           AND organization_id = ${input.organizationId}
-        FOR UPDATE
+
       `;
       if (!targets[0]) return null;
-      const currentVersions = await transaction<{ version: number }[]>`
+      const currentVersions = copied
+        ? [{ version: 1 }]
+        : await transaction<{ version: number }[]>`
         SELECT version
         FROM invoice_template_versions
         WHERE id = ${targets[0].current_version_id}
@@ -385,7 +379,7 @@ export class PostgresInvoiceTemplateRepository
       if (!currentVersions[0]) {
         throw new Error("Current invoice template version is missing");
       }
-      const rows = await transaction<VersionRow[]>`
+      const rows = transaction.queue(transaction<VersionRow[]>`
         INSERT INTO invoice_template_versions (
           id, invoice_template_id, version, html, css, created_by
         ) VALUES (
@@ -395,15 +389,15 @@ export class PostgresInvoiceTemplateRepository
         )
         RETURNING id, invoice_template_id, version, html, css, created_by,
           created_at
-      `;
-      await transaction`
+      `);
+      transaction.queue(transaction`
         UPDATE invoice_templates
         SET name = ${input.name}, description = ${input.description},
-          current_version_id = ${input.versionId}, updated_at = now()
+          current_version_id = ${input.versionId}, updated_at = CAST(unixepoch('subsec') * 1000 AS INTEGER)
         WHERE id = ${targetTemplateId}
           AND organization_id = ${input.organizationId}
-      `;
-      return versionFromRow(rows[0]);
+      `);
+      return transaction.after(() => versionFromRow(rows.value[0]));
     });
   }
 }

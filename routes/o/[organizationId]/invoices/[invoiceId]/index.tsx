@@ -6,9 +6,9 @@ import { type Invoice, invoiceStatusLabel } from "@/domain/invoices/types.ts";
 import type { InvoicePayment } from "@/domain/banking/types.ts";
 import { formatBankAmountForDisplay } from "@/domain/banking/types.ts";
 import { isUuid } from "@/domain/organizations/types.ts";
-import { PostgresInvoiceRepository } from "@/repositories/invoice_repository.ts";
-import { PostgresInvoiceDocumentRepository } from "@/repositories/invoice_document_repository.ts";
-import { PostgresInvoicePaymentRepository } from "@/repositories/invoice_payment_repository.ts";
+import { D1InvoiceRepository } from "@/repositories/invoice_repository.ts";
+import { D1InvoiceDocumentRepository } from "@/repositories/invoice_document_repository.ts";
+import { D1InvoicePaymentRepository } from "@/repositories/invoice_payment_repository.ts";
 
 interface PageData {
   invoice: Invoice;
@@ -23,7 +23,7 @@ export const handler = define.handlers<PageData>({
     if (!isUuid(ctx.params.invoiceId)) {
       return new Response("Stránka nebyla nalezena.", { status: 404 });
     }
-    const invoice = await new PostgresInvoiceRepository().findForUser(
+    const invoice = await new D1InvoiceRepository().findForUser(
       ctx.params.organizationId,
       ctx.params.invoiceId,
       ctx.state.user!.id,
@@ -32,12 +32,12 @@ export const handler = define.handlers<PageData>({
       return new Response("Stránka nebyla nalezena.", { status: 404 });
     }
     const [document, payments] = await Promise.all([
-      new PostgresInvoiceDocumentRepository().findPdfForUser(
+      new D1InvoiceDocumentRepository().findPdfForUser(
         ctx.params.organizationId,
         ctx.params.invoiceId,
         ctx.state.user!.id,
       ),
-      new PostgresInvoicePaymentRepository().listForInvoiceForUser(
+      new D1InvoicePaymentRepository().listForInvoiceForUser(
         ctx.params.organizationId,
         ctx.params.invoiceId,
         ctx.state.user!.id,

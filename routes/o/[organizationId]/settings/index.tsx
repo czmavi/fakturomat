@@ -8,9 +8,9 @@ import type {
   OrganizationSettings,
   OrganizationSettingsInput,
 } from "@/domain/organizations/settings.ts";
-import { PostgresBankAccountRepository } from "@/repositories/bank_account_repository.ts";
-import { PostgresInvoiceTemplateRepository } from "@/repositories/invoice_template_repository.ts";
-import { PostgresOrganizationSettingsRepository } from "@/repositories/organization_settings_repository.ts";
+import { D1BankAccountRepository } from "@/repositories/bank_account_repository.ts";
+import { D1InvoiceTemplateRepository } from "@/repositories/invoice_template_repository.ts";
+import { D1OrganizationSettingsRepository } from "@/repositories/organization_settings_repository.ts";
 import { isValidCsrfToken } from "@/services/csrf_service.ts";
 import {
   OrganizationSettingsService,
@@ -79,11 +79,11 @@ export const handler = define.handlers<SettingsPageData>({
   async GET(ctx) {
     const user = ctx.state.user!;
     const organizationId = ctx.params.organizationId;
-    const settingsRepository = new PostgresOrganizationSettingsRepository();
+    const settingsRepository = new D1OrganizationSettingsRepository();
     const [settings, bankAccounts, templates] = await Promise.all([
       settingsRepository.findForUser(organizationId, user.id),
-      new PostgresBankAccountRepository().listForUser(organizationId, user.id),
-      new PostgresInvoiceTemplateRepository().listForUser({
+      new D1BankAccountRepository().listForUser(organizationId, user.id),
+      new D1InvoiceTemplateRepository().listForUser({
         organizationId,
         userId: user.id,
       }),
@@ -105,16 +105,16 @@ export const handler = define.handlers<SettingsPageData>({
     const organizationId = ctx.params.organizationId;
     const form = await ctx.req.formData();
     const values = inputFromForm(form);
-    const repository = new PostgresOrganizationSettingsRepository();
+    const repository = new D1OrganizationSettingsRepository();
 
     const renderError = async (error: string, status: number) => {
       const [settings, bankAccounts, templates] = await Promise.all([
         repository.findForUser(organizationId, user.id),
-        new PostgresBankAccountRepository().listForUser(
+        new D1BankAccountRepository().listForUser(
           organizationId,
           user.id,
         ),
-        new PostgresInvoiceTemplateRepository().listForUser({
+        new D1InvoiceTemplateRepository().listForUser({
           organizationId,
           userId: user.id,
         }),
@@ -145,7 +145,7 @@ export const handler = define.handlers<SettingsPageData>({
       const updated = await new OrganizationSettingsService(
         repository,
         getObjectStorage(),
-        new PostgresInvoiceTemplateRepository(),
+        new D1InvoiceTemplateRepository(),
       ).update({
         organizationId,
         userId: user.id,

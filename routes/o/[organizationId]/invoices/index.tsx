@@ -8,7 +8,7 @@ import {
   invoiceStatusLabel,
   type InvoiceSummary,
 } from "@/domain/invoices/types.ts";
-import { PostgresInvoiceRepository } from "@/repositories/invoice_repository.ts";
+import { D1InvoiceRepository } from "@/repositories/invoice_repository.ts";
 
 interface PageData {
   invoices: InvoiceSummary[];
@@ -21,7 +21,7 @@ export const handler = define.handlers<PageData>({
     const status = INVOICE_STATUSES.includes(requested as InvoiceStatus)
       ? requested as InvoiceStatus
       : null;
-    const invoices = await new PostgresInvoiceRepository().listForUser({
+    const invoices = await new D1InvoiceRepository().listForUser({
       organizationId: ctx.params.organizationId,
       userId: ctx.state.user!.id,
       status,

@@ -1,6 +1,6 @@
 import { define } from "@/utils.ts";
 import { isUuid } from "@/domain/organizations/types.ts";
-import { PostgresInvoiceRepository } from "@/repositories/invoice_repository.ts";
+import { D1InvoiceRepository } from "@/repositories/invoice_repository.ts";
 import {
   createInvoiceViewModel,
   InvoiceViewModelError,
@@ -12,7 +12,7 @@ export const handler = define.handlers({
     if (!isUuid(ctx.params.invoiceId)) {
       return new Response("QR Platba nebyla nalezena.", { status: 404 });
     }
-    const invoice = await new PostgresInvoiceRepository().findForUser(
+    const invoice = await new D1InvoiceRepository().findForUser(
       ctx.params.organizationId,
       ctx.params.invoiceId,
       ctx.state.user!.id,

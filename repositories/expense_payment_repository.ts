@@ -1,4 +1,5 @@
-import type { Sql } from "postgres";
+import { money } from "@/database/d1.ts";
+import type { Sql } from "@/database/d1.ts";
 import { getDb } from "@/database/client.ts";
 import type {
   ExpensePayment,
@@ -93,12 +94,11 @@ const PAYMENT_SELECT = `
   expense_payments.expense_id,
   expenses.supplier_name AS expense_supplier_name,
   expenses.supplier_invoice_number AS expense_document_number,
-  expense_payments.bank_transaction_id, expense_payments.amount::text,
+  expense_payments.bank_transaction_id, expense_payments.amount,
   expense_payments.created_by, expense_payments.created_at
 `;
 
-export class PostgresExpensePaymentRepository
-  implements ExpensePaymentRepository {
+export class D1ExpensePaymentRepository implements ExpensePaymentRepository {
   constructor(private readonly sql: Sql = getDb()) {}
 
   async manualMatchForUser(input: {
@@ -107,84 +107,91 @@ export class PostgresExpensePaymentRepository
     bankTransactionId: string;
     expenseId: string;
   }): Promise<ManualExpenseMatchResult> {
-    return await this.sql.begin(async (transaction) => {
-      const access = await transaction<{ allowed: boolean }[]>`
+    return await this.sql.begin<ManualExpenseMatchResult>(
+      async (transaction) => {
+        const access = await transaction<{ allowed: boolean }[]>`
         SELECT EXISTS (
           SELECT 1 FROM organization_memberships
           WHERE organization_id = ${input.organizationId}
             AND user_id = ${input.userId}
         ) AS allowed
       `;
-      if (!access[0].allowed) return { kind: "not_found" };
+        if (!access[0].allowed) return { kind: "not_found" };
 
-      const bankTransactions = await transaction<
-        Array<{ amount: string; currency: string }>
-      >`
-        SELECT (-amount)::text AS amount, currency
+        const bankTransactions = await transaction<
+          Array<{ amount: string; currency: string }>
+        >`
+        SELECT (-amount) AS amount, currency
         FROM bank_transactions
         WHERE id = ${input.bankTransactionId}
           AND organization_id = ${input.organizationId}
           AND amount < 0
-        FOR UPDATE
+
       `;
-      const expenses = await transaction<
-        Array<{
-          total_amount: string;
-          currency: string;
-          supplier_name: string;
-          supplier_invoice_number: string | null;
-        }>
-      >`
-        SELECT total_amount::text, currency, supplier_name,
+        const expenses = await transaction<
+          Array<{
+            total_amount: string;
+            currency: string;
+            supplier_name: string;
+            supplier_invoice_number: string | null;
+          }>
+        >`
+        SELECT total_amount, currency, supplier_name,
           supplier_invoice_number
         FROM expenses
         WHERE id = ${input.expenseId}
           AND organization_id = ${input.organizationId}
-        FOR UPDATE
-      `;
-      const bankTransaction = bankTransactions[0];
-      const expense = expenses[0];
-      if (!bankTransaction || !expense) return { kind: "not_found" };
-      if (bankTransaction.currency !== expense.currency) {
-        return { kind: "not_matchable" };
-      }
 
-      const amounts = await transaction<
-        Array<{ transaction_remaining: string; expense_remaining: string }>
-      >`
+      `;
+        const bankTransaction = bankTransactions[0];
+        const expense = expenses[0];
+        if (!bankTransaction || !expense) return { kind: "not_found" };
+        if (bankTransaction.currency !== expense.currency) {
+          return { kind: "not_matchable" };
+        }
+
+        const amounts = await transaction<
+          Array<{ transaction_remaining: string; expense_remaining: string }>
+        >`
         SELECT
-          (${bankTransaction.amount}::numeric - COALESCE((
+          (${money(bankTransaction.amount)} - COALESCE((
             SELECT SUM(amount) FROM expense_payments
             WHERE bank_transaction_id = ${input.bankTransactionId}
-          ), 0))::text AS transaction_remaining,
-          (${expense.total_amount}::numeric - COALESCE((
+          ), 0)) AS transaction_remaining,
+          (${money(expense.total_amount)} - COALESCE((
             SELECT SUM(amount) FROM expense_payments
             WHERE expense_id = ${input.expenseId}
-          ), 0))::text AS expense_remaining
+          ), 0)) AS expense_remaining
       `;
-      const inserted = await transaction<ExpensePaymentRow[]>`
+        const inserted = transaction.queue(transaction<ExpensePaymentRow[]>`
         INSERT INTO expense_payments (
           id, organization_id, expense_id, bank_transaction_id, amount,
           created_by
         )
         SELECT ${crypto.randomUUID()}, ${input.organizationId},
           ${input.expenseId}, ${input.bankTransactionId},
-          LEAST(
-            ${amounts[0].transaction_remaining}::numeric,
-            ${amounts[0].expense_remaining}::numeric
+          MIN(
+            ${money(amounts[0].transaction_remaining)},
+            ${money(amounts[0].expense_remaining)}
           ), ${input.userId}
-        WHERE ${amounts[0].transaction_remaining}::numeric > 0
-          AND ${amounts[0].expense_remaining}::numeric > 0
+        WHERE ${money(amounts[0].transaction_remaining)} > 0
+          AND ${money(amounts[0].expense_remaining)} > 0
         ON CONFLICT (expense_id, bank_transaction_id) DO NOTHING
         RETURNING id, organization_id, expense_id,
-          ${expense.supplier_name}::text AS expense_supplier_name,
-          ${expense.supplier_invoice_number}::text AS expense_document_number,
-          bank_transaction_id, amount::text, created_by, created_at
-      `;
-      return inserted[0]
-        ? { kind: "matched", payment: paymentFromRow(inserted[0]) }
-        : { kind: "not_matchable" };
-    });
+          ${expense.supplier_name} AS expense_supplier_name,
+          ${expense.supplier_invoice_number} AS expense_document_number,
+          bank_transaction_id, amount, created_by, created_at
+      `);
+        return transaction.after(() =>
+          inserted.value[0]
+            ? {
+              kind: "matched" as const,
+              payment: paymentFromRow(inserted.value[0]),
+            }
+            : { kind: "not_matchable" as const }
+        );
+      },
+    );
   }
 
   async unmatchForUser(input: {
@@ -215,26 +222,26 @@ export class PostgresExpensePaymentRepository
         SELECT id FROM bank_transactions
         WHERE id = ${payment.bank_transaction_id}
           AND organization_id = ${input.organizationId}
-        FOR UPDATE
+
       `;
       await transaction`
         SELECT id FROM expenses
         WHERE id = ${payment.expense_id}
           AND organization_id = ${input.organizationId}
-        FOR UPDATE
+
       `;
       const lockedPayments = await transaction<{ id: string }[]>`
         SELECT id FROM expense_payments
         WHERE id = ${payment.id}
           AND organization_id = ${input.organizationId}
-        FOR UPDATE
+
       `;
       if (!lockedPayments[0]) return false;
-      await transaction`
+      transaction.queue(transaction`
         DELETE FROM expense_payments
         WHERE id = ${payment.id}
           AND organization_id = ${input.organizationId}
-      `;
+      `);
       return true;
     });
   }
@@ -297,9 +304,9 @@ export class PostgresExpensePaymentRepository
     const rows = await this.sql<ExpenseCandidateRow[]>`
       SELECT expenses.id, expenses.supplier_name,
         expenses.supplier_invoice_number, expenses.description,
-        expenses.currency, expenses.total_amount::text,
-        COALESCE(SUM(expense_payments.amount), 0)::text AS paid_amount,
-        (expenses.total_amount - COALESCE(SUM(expense_payments.amount), 0))::text
+        expenses.currency, expenses.total_amount,
+        COALESCE(SUM(expense_payments.amount), 0) AS paid_amount,
+        (expenses.total_amount - COALESCE(SUM(expense_payments.amount), 0))
           AS remaining_amount
       FROM expenses
       JOIN organization_memberships AS memberships

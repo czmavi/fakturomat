@@ -1,0 +1,10 @@
+APP_ENV=development
+BETTER_AUTH_URL=http://localhost:5173
+BETTER_AUTH_SECRET=replace-with-a-random-secret-at-least-32-characters
+BANK_CREDENTIALS_ENCRYPTION_KEY=replace-with-base64-encoded-32-byte-key
+OPENAI_API_KEY=
+OPENAI_EXPENSE_MODEL=gpt-4.1-mini
+# Only for generating one bootstrap user's SQL; remove the password afterward.
+FAKTUROMAT_ADMIN_EMAIL=admin@example.test
+FAKTUROMAT_ADMIN_NAME=Admin
+FAKTUROMAT_ADMIN_PASSWORD=replace-with-at-least-12-characters

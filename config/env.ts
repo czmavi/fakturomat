@@ -1,7 +1,8 @@
+import { envValue } from "./runtime.ts";
 export type AppEnvironment = "development" | "test" | "production";
 
 export function getAppEnvironment(): AppEnvironment {
-  const value = Deno.env.get("APP_ENV") ?? "development";
+  const value = envValue("APP_ENV") ?? "development";
   if (value !== "development" && value !== "test" && value !== "production") {
     throw new Error("APP_ENV must be development, test, or production");
   }
@@ -9,7 +10,7 @@ export function getAppEnvironment(): AppEnvironment {
 }
 
 export function requireDatabaseUrl(): string {
-  const value = Deno.env.get("DATABASE_URL")?.trim();
+  const value = envValue("DATABASE_URL")?.trim();
   if (!value) {
     throw new Error("Missing required environment variable DATABASE_URL");
   }
@@ -17,7 +18,7 @@ export function requireDatabaseUrl(): string {
 }
 
 export function getDatabaseMaxConnections(): number {
-  const raw = Deno.env.get("DATABASE_MAX_CONNECTIONS") ?? "10";
+  const raw = envValue("DATABASE_MAX_CONNECTIONS") ?? "10";
   const value = Number(raw);
   if (!Number.isInteger(value) || value < 1 || value > 100) {
     throw new Error(
@@ -28,7 +29,7 @@ export function getDatabaseMaxConnections(): number {
 }
 
 export function getBetterAuthSecret(): string {
-  const value = Deno.env.get("BETTER_AUTH_SECRET")?.trim();
+  const value = envValue("BETTER_AUTH_SECRET")?.trim();
   if (value) return value;
   if (getAppEnvironment() === "test") {
     return "fakturomat-test-secret-at-least-32-characters";
@@ -37,7 +38,7 @@ export function getBetterAuthSecret(): string {
 }
 
 export function getBetterAuthUrl(): string {
-  const value = Deno.env.get("BETTER_AUTH_URL")?.trim();
+  const value = envValue("BETTER_AUTH_URL")?.trim();
   if (value) {
     const url = new URL(value);
     if (url.pathname !== "/" || url.search || url.hash) {
@@ -50,7 +51,7 @@ export function getBetterAuthUrl(): string {
 }
 
 export function requireBankCredentialsEncryptionKey(): Uint8Array {
-  const encoded = Deno.env.get("BANK_CREDENTIALS_ENCRYPTION_KEY")?.trim();
+  const encoded = envValue("BANK_CREDENTIALS_ENCRYPTION_KEY")?.trim();
   if (!encoded) {
     throw new Error(
       "Missing required environment variable BANK_CREDENTIALS_ENCRYPTION_KEY",

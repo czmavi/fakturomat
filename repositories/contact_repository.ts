@@ -1,4 +1,4 @@
-import type { Sql } from "postgres";
+import type { Sql } from "@/database/d1.ts";
 import { getDb } from "@/database/client.ts";
 import type {
   Contact,
@@ -94,7 +94,7 @@ function escapeLike(value: string): string {
   );
 }
 
-export class PostgresContactRepository implements ContactRepository {
+export class D1ContactRepository implements ContactRepository {
   constructor(private readonly sql: Sql = getDb()) {}
 
   async listForUser(input: {
@@ -120,10 +120,10 @@ export class PostgresContactRepository implements ContactRepository {
         AND (${input.includeArchived} OR contacts.archived_at IS NULL)
         AND (
           ${search} = ''
-          OR contacts.name ILIKE ${pattern} ESCAPE '\'
-          OR COALESCE(contacts.ico, '') ILIKE ${pattern} ESCAPE '\'
-          OR COALESCE(contacts.dic, '') ILIKE ${pattern} ESCAPE '\'
-          OR COALESCE(contacts.email, '') ILIKE ${pattern} ESCAPE '\'
+          OR contacts.name LIKE ${pattern} ESCAPE '\'
+          OR COALESCE(contacts.ico, '') LIKE ${pattern} ESCAPE '\'
+          OR COALESCE(contacts.dic, '') LIKE ${pattern} ESCAPE '\'
+          OR COALESCE(contacts.email, '') LIKE ${pattern} ESCAPE '\'
         )
       ORDER BY contacts.archived_at NULLS FIRST, lower(contacts.name), contacts.id
     `;
@@ -204,7 +204,7 @@ export class PostgresContactRepository implements ContactRepository {
       UPDATE contacts
       SET type = $1, name = $2, ico = $3, dic = $4, street = $5,
         city = $6, postal_code = $7, country = $8, email = $9, phone = $10,
-        default_due_days = $11, note = $12, updated_at = now()
+        default_due_days = $11, note = $12, updated_at = CAST(unixepoch('subsec') * 1000 AS INTEGER)
       WHERE id = $13 AND organization_id = $14
         AND EXISTS (
           SELECT 1 FROM organization_memberships
@@ -240,7 +240,7 @@ export class PostgresContactRepository implements ContactRepository {
   ): Promise<boolean> {
     const rows = await this.sql<{ id: string }[]>`
       UPDATE contacts
-      SET archived_at = COALESCE(archived_at, now()), updated_at = now()
+      SET archived_at = COALESCE(archived_at, CAST(unixepoch('subsec') * 1000 AS INTEGER)), updated_at = CAST(unixepoch('subsec') * 1000 AS INTEGER)
       WHERE id = ${contactId}
         AND organization_id = ${organizationId}
         AND EXISTS (

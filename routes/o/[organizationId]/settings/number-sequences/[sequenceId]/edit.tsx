@@ -6,7 +6,7 @@ import InvoiceNumberSequenceForm, {
 } from "@/components/InvoiceNumberSequenceForm.tsx";
 import type { InvoiceNumberSequenceInput } from "@/domain/invoices/number_sequence_types.ts";
 import { isUuid } from "@/domain/organizations/types.ts";
-import { PostgresInvoiceNumberSequenceRepository } from "@/repositories/invoice_number_sequence_repository.ts";
+import { D1InvoiceNumberSequenceRepository } from "@/repositories/invoice_number_sequence_repository.ts";
 import { isValidCsrfToken } from "@/services/csrf_service.ts";
 import {
   InvoiceNumberSequenceService,
@@ -23,7 +23,7 @@ export const handler = define.handlers<PageData>({
     if (!isUuid(ctx.params.sequenceId)) {
       return new Response("Stránka nebyla nalezena.", { status: 404 });
     }
-    const sequence = await new PostgresInvoiceNumberSequenceRepository()
+    const sequence = await new D1InvoiceNumberSequenceRepository()
       .findForUser(
         ctx.params.organizationId,
         ctx.params.sequenceId,
@@ -57,7 +57,7 @@ export const handler = define.handlers<PageData>({
     }
     try {
       const sequence = await new InvoiceNumberSequenceService(
-        new PostgresInvoiceNumberSequenceRepository(),
+        new D1InvoiceNumberSequenceRepository(),
       ).update({
         ...values,
         id: ctx.params.sequenceId,

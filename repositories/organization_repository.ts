@@ -1,4 +1,4 @@
-import type { Sql } from "postgres";
+import type { Sql } from "@/database/d1.ts";
 import { getDb } from "@/database/client.ts";
 import type {
   OrganizationRole,
@@ -39,7 +39,7 @@ function toOrganization(row: OrganizationRow): OrganizationSummary {
   };
 }
 
-export class PostgresOrganizationRepository implements OrganizationRepository {
+export class D1OrganizationRepository implements OrganizationRepository {
   constructor(private readonly sql: Sql = getDb()) {}
 
   async listForUser(userId: string): Promise<OrganizationSummary[]> {
@@ -87,8 +87,8 @@ export class PostgresOrganizationRepository implements OrganizationRepository {
     displayName: string;
     ownerUserId: string;
   }): Promise<OrganizationSummary> {
-    await this.sql.begin(async (transaction) => {
-      await transaction`
+    await this.sql.begin((transaction) => {
+      transaction.queue(transaction`
         INSERT INTO organizations (id, type, official_name, display_name)
         VALUES (
           ${input.id},
@@ -96,24 +96,31 @@ export class PostgresOrganizationRepository implements OrganizationRepository {
           ${input.officialName},
           ${input.displayName}
         )
-      `;
-      await transaction`
+      `);
+      transaction.queue(transaction`
         INSERT INTO organization_memberships (organization_id, user_id, role)
         VALUES (${input.id}, ${input.ownerUserId}, 'OWNER')
-      `;
-      await transaction`
+      `);
+      transaction.queue(transaction`
         INSERT INTO invoice_number_sequences (
           id, organization_id, name, prefix, padding, is_default
         ) VALUES (${crypto.randomUUID()}, ${input.id}, 'Výchozí', '', 4, true)
-      `;
-      await transaction`
-        INSERT INTO expense_categories (id, organization_id, name)
-        SELECT gen_random_uuid(), ${input.id}, name
-        FROM unnest(ARRAY[
-          'Software', 'Hardware', 'Hosting', 'Reklama', 'Kancelář',
-          'Cestovné', 'Ostatní'
-        ]) AS name
-      `;
+      `);
+      for (
+        const name of [
+          "Software",
+          "Hardware",
+          "Hosting",
+          "Reklama",
+          "Kancelář",
+          "Cestovné",
+          "Ostatní",
+        ]
+      ) {
+        transaction.queue(
+          transaction`INSERT INTO expense_categories (id, organization_id, name) VALUES (${crypto.randomUUID()}, ${input.id}, ${name})`,
+        );
+      }
     });
 
     return {

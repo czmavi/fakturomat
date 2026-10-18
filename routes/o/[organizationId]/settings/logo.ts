@@ -1,11 +1,11 @@
 import { define } from "@/utils.ts";
-import { PostgresOrganizationSettingsRepository } from "@/repositories/organization_settings_repository.ts";
+import { D1OrganizationSettingsRepository } from "@/repositories/organization_settings_repository.ts";
 import { getObjectStorage } from "@/services/storage/storage_factory.ts";
 
 export const handler = define.handlers({
   async GET(ctx) {
     const user = ctx.state.user!;
-    const settings = await new PostgresOrganizationSettingsRepository()
+    const settings = await new D1OrganizationSettingsRepository()
       .findForUser(
         ctx.params.organizationId,
         user.id,

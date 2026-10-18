@@ -6,7 +6,7 @@ import ExpenseCategoryForm, {
   expenseCategoryInputFromForm,
 } from "@/components/ExpenseCategoryForm.tsx";
 import type { ExpenseCategoryInput } from "@/domain/expenses/types.ts";
-import { PostgresExpenseCategoryRepository } from "@/repositories/expense_category_repository.ts";
+import { D1ExpenseCategoryRepository } from "@/repositories/expense_category_repository.ts";
 import { isValidCsrfToken } from "@/services/csrf_service.ts";
 import {
   ExpenseCategoryService,
@@ -33,7 +33,7 @@ export const handler = define.handlers<PageData>({
     }
     try {
       const category = await new ExpenseCategoryService(
-        new PostgresExpenseCategoryRepository(),
+        new D1ExpenseCategoryRepository(),
       ).create({
         ...values,
         organizationId: ctx.params.organizationId,

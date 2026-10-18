@@ -1,11 +1,11 @@
 import { define } from "@/utils.ts";
-import { PostgresOrganizationRepository } from "@/repositories/organization_repository.ts";
+import { D1OrganizationRepository } from "@/repositories/organization_repository.ts";
 
 export default define.middleware(async (ctx) => {
   const user = ctx.state.user;
   if (user === null) return ctx.redirect("/login");
 
-  const organizations = await new PostgresOrganizationRepository().listForUser(
+  const organizations = await new D1OrganizationRepository().listForUser(
     user.id,
   );
   const requestedId = ctx.url.searchParams.get("organizationId");

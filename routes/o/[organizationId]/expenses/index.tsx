@@ -10,8 +10,8 @@ import {
 } from "@/domain/expenses/types.ts";
 import { formatMoneyForDisplay } from "@/domain/invoices/money.ts";
 import { isUuid } from "@/domain/organizations/types.ts";
-import { PostgresExpenseCategoryRepository } from "@/repositories/expense_category_repository.ts";
-import { PostgresExpenseRepository } from "@/repositories/expense_repository.ts";
+import { D1ExpenseCategoryRepository } from "@/repositories/expense_category_repository.ts";
+import { D1ExpenseRepository } from "@/repositories/expense_repository.ts";
 
 interface PageData {
   expenses: ExpenseSummary[];
@@ -34,9 +34,9 @@ export const handler = define.handlers<PageData>({
       )
       ? requestedType as ExpenseDocumentType
       : null;
-    const repository = new PostgresExpenseCategoryRepository();
+    const repository = new D1ExpenseCategoryRepository();
     const [expenses, categories] = await Promise.all([
-      new PostgresExpenseRepository().listForUser({
+      new D1ExpenseRepository().listForUser({
         organizationId: ctx.params.organizationId,
         userId: ctx.state.user!.id,
         search,

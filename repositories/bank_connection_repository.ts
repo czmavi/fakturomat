@@ -1,4 +1,4 @@
-import type { Sql } from "postgres";
+import type { Sql } from "@/database/d1.ts";
 import { getDb } from "@/database/client.ts";
 import type {
   BankConnection,
@@ -81,8 +81,8 @@ export interface BankConnectionRepository {
 
 const SAFE_COLUMNS = `
   id, organization_id, bank_account_id, provider, status, last_sync_at,
-  current_balance::text AS current_balance, balance_currency,
-  balance_date::text AS balance_date, created_at, updated_at
+  current_balance AS current_balance, balance_currency,
+  balance_date AS balance_date, created_at, updated_at
 `;
 
 const SCOPED_JOINS = `
@@ -93,8 +93,7 @@ const SCOPED_JOINS = `
     ON memberships.organization_id = bank_connections.organization_id
 `;
 
-export class PostgresBankConnectionRepository
-  implements BankConnectionRepository {
+export class D1BankConnectionRepository implements BankConnectionRepository {
   constructor(private readonly sql: Sql = getDb()) {}
 
   async bankAccountExistsForUser(
@@ -126,9 +125,9 @@ export class PostgresBankConnectionRepository
       SELECT bank_connections.id, bank_connections.organization_id,
         bank_connections.bank_account_id, bank_connections.provider,
         bank_connections.status, bank_connections.last_sync_at,
-        bank_connections.current_balance::text AS current_balance,
+        bank_connections.current_balance AS current_balance,
         bank_connections.balance_currency,
-        bank_connections.balance_date::text AS balance_date,
+        bank_connections.balance_date AS balance_date,
         bank_connections.created_at, bank_connections.updated_at
       FROM bank_connections
       ${SCOPED_JOINS}
@@ -152,9 +151,9 @@ export class PostgresBankConnectionRepository
       SELECT bank_connections.id, bank_connections.organization_id,
         bank_connections.bank_account_id, bank_connections.provider,
         bank_connections.status, bank_connections.last_sync_at,
-        bank_connections.current_balance::text AS current_balance,
+        bank_connections.current_balance AS current_balance,
         bank_connections.balance_currency,
-        bank_connections.balance_date::text AS balance_date,
+        bank_connections.balance_date AS balance_date,
         bank_connections.created_at, bank_connections.updated_at,
         bank_connections.encrypted_credentials
       FROM bank_connections
@@ -193,7 +192,7 @@ export class PostgresBankConnectionRepository
         AND memberships.user_id = $7
       ON CONFLICT (bank_account_id, provider) DO UPDATE
       SET encrypted_credentials = EXCLUDED.encrypted_credentials,
-        status = EXCLUDED.status, updated_at = now()
+        status = EXCLUDED.status, updated_at = CAST(unixepoch('subsec') * 1000 AS INTEGER)
       RETURNING ${SAFE_COLUMNS}
     `,
       [

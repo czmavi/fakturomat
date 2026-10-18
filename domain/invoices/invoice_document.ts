@@ -8,7 +8,7 @@ export interface InvoiceDocument {
   organizationId: string;
   invoiceId: string;
   type: InvoiceDocumentType;
-  storageProvider: "local" | "s3";
+  storageProvider: "local" | "s3" | "r2";
   storageKey: string;
   etag: string | null;
   sha256: string;
@@ -19,7 +19,7 @@ export interface InvoiceDocument {
 export interface PreparedInvoiceDocument {
   id: string;
   type: InvoiceDocumentType;
-  storageProvider: "local" | "s3";
+  storageProvider: "local" | "s3" | "r2";
   storageKey: string;
   etag: string | null;
   sha256: string;

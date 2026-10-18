@@ -4,13 +4,11 @@ import {
   hashPassword as hashBetterAuthPassword,
   verifyPassword as verifyBetterAuthPassword,
 } from "better-auth/crypto";
-import { Pool } from "pg";
+import { runtime } from "@/config/runtime.ts";
 import {
   getAppEnvironment,
   getBetterAuthSecret,
   getBetterAuthUrl,
-  getDatabaseMaxConnections,
-  requireDatabaseUrl,
 } from "@/config/env.ts";
 import { verifyLegacyPassword } from "@/domain/auth/legacy_password.ts";
 
@@ -18,19 +16,13 @@ export const SESSION_COOKIE_NAME = "fakturomat.session_token";
 export const SESSION_DURATION_SECONDS = 60 * 60 * 24 * 7;
 
 function createBetterAuth() {
-  const pool = new Pool({
-    connectionString: requireDatabaseUrl(),
-    max: getDatabaseMaxConnections(),
-    idleTimeoutMillis: 20_000,
-    connectionTimeoutMillis: 10_000,
-  });
-  authPool = pool;
+  const database = runtime().DB;
 
   return betterAuth({
     appName: "Fakturomat",
     baseURL: getBetterAuthUrl(),
     secret: getBetterAuthSecret(),
-    database: pool,
+    database,
     emailAndPassword: {
       enabled: true,
       disableSignUp: true,
@@ -108,6 +100,8 @@ function createBetterAuth() {
     },
     rateLimit: {
       enabled: true,
+      storage: "database",
+      modelName: "auth_rate_limits",
       window: 60,
       max: 100,
       customRules: {
@@ -118,11 +112,10 @@ function createBetterAuth() {
       session: {
         create: {
           before: async (session) => {
-            const result = await pool.query<{ is_active: boolean }>(
-              "SELECT is_active FROM users WHERE id = $1",
-              [session.userId],
-            );
-            if (!result.rows[0]?.is_active) {
+            const result = await database.prepare(
+              "SELECT is_active FROM users WHERE id = ?",
+            ).bind(session.userId).first<{ is_active: number }>();
+            if (result?.is_active !== 1) {
               throw new APIError("FORBIDDEN", {
                 message: "User account is inactive",
               });
@@ -132,6 +125,7 @@ function createBetterAuth() {
       },
     },
     advanced: {
+      ipAddress: { ipAddressHeaders: ["cf-connecting-ip"] },
       cookiePrefix: "fakturomat",
       useSecureCookies: getAppEnvironment() === "production",
       database: {
@@ -143,17 +137,10 @@ function createBetterAuth() {
   });
 }
 
-let authInstance: ReturnType<typeof createBetterAuth> | undefined;
-let authPool: Pool | undefined;
-
+// Instances belong to a request; bindings and database handles never leak across requests.
 export function getAuth(): ReturnType<typeof createBetterAuth> {
-  authInstance ??= createBetterAuth();
-  return authInstance;
+  return createBetterAuth();
 }
-
-export async function closeBetterAuthDatabase(): Promise<void> {
-  const pool = authPool;
-  authPool = undefined;
-  authInstance = undefined;
-  if (pool !== undefined) await pool.end();
+export function closeBetterAuthDatabase(): Promise<void> {
+  return Promise.resolve();
 }

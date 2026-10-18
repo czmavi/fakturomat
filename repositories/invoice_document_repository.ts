@@ -1,4 +1,4 @@
-import type { Sql } from "postgres";
+import type { Sql } from "@/database/d1.ts";
 import { getDb } from "@/database/client.ts";
 import type { InvoiceDocument } from "@/domain/invoices/invoice_document.ts";
 
@@ -7,7 +7,7 @@ interface InvoiceDocumentRow {
   organization_id: string;
   invoice_id: string;
   type: "PDF";
-  storage_provider: "local" | "s3";
+  storage_provider: "local" | "s3" | "r2";
   storage_key: string;
   etag: string | null;
   sha256: string;
@@ -38,8 +38,7 @@ export interface InvoiceDocumentRepository {
   ): Promise<InvoiceDocument | null>;
 }
 
-export class PostgresInvoiceDocumentRepository
-  implements InvoiceDocumentRepository {
+export class D1InvoiceDocumentRepository implements InvoiceDocumentRepository {
   constructor(private readonly sql: Sql = getDb()) {}
 
   async findPdfForUser(
@@ -50,7 +49,7 @@ export class PostgresInvoiceDocumentRepository
     const rows = await this.sql<InvoiceDocumentRow[]>`
       SELECT documents.id, documents.organization_id, documents.invoice_id,
         documents.type, documents.storage_provider, documents.storage_key, documents.etag, documents.sha256,
-        documents.size::text, documents.created_at
+        documents.size, documents.created_at
       FROM invoice_documents AS documents
       JOIN invoices
         ON invoices.id = documents.invoice_id

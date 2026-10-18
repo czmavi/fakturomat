@@ -8,7 +8,7 @@ import InvoiceForm, {
 } from "@/components/InvoiceForm.tsx";
 import type { InvoiceDraftFormInput } from "@/domain/invoices/types.ts";
 import { isUuid } from "@/domain/organizations/types.ts";
-import { PostgresInvoiceRepository } from "@/repositories/invoice_repository.ts";
+import { D1InvoiceRepository } from "@/repositories/invoice_repository.ts";
 import { isValidCsrfToken } from "@/services/csrf_service.ts";
 import { loadInvoiceFormOptions } from "@/services/invoice_form_options.ts";
 import {
@@ -26,7 +26,7 @@ export const handler = define.handlers<PageData>({
     if (!isUuid(ctx.params.invoiceId)) {
       return new Response("Stránka nebyla nalezena.", { status: 404 });
     }
-    const repository = new PostgresInvoiceRepository();
+    const repository = new D1InvoiceRepository();
     const invoice = await repository.findForUser(
       ctx.params.organizationId,
       ctx.params.invoiceId,
@@ -79,7 +79,7 @@ export const handler = define.handlers<PageData>({
       );
     }
     try {
-      const invoice = await new InvoiceService(new PostgresInvoiceRepository())
+      const invoice = await new InvoiceService(new D1InvoiceRepository())
         .updateDraft({
           ...values,
           id: ctx.params.invoiceId,

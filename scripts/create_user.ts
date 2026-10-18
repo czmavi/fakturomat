@@ -1,61 +1,42 @@
 import { hashPassword } from "better-auth/crypto";
-import { closeDb, getDb } from "@/database/client.ts";
-
-function argument(name: string): string | undefined {
-  const index = Deno.args.indexOf(name);
-  return index >= 0 ? Deno.args[index + 1] : undefined;
-}
+import { sqlLiteral } from "./export_postgres_to_d1.ts";
 
 if (import.meta.main) {
-  try {
-    const email = argument("--email") ?? Deno.env.get("FAKTUROMAT_ADMIN_EMAIL");
-    const displayName = argument("--name") ??
-      Deno.env.get("FAKTUROMAT_ADMIN_NAME");
-    const password = Deno.env.get("FAKTUROMAT_ADMIN_PASSWORD");
-
-    if (!email || !displayName || !password) {
-      throw new Error(
-        "Set FAKTUROMAT_ADMIN_EMAIL, FAKTUROMAT_ADMIN_NAME and FAKTUROMAT_ADMIN_PASSWORD (or pass --email and --name).",
-      );
-    }
-
-    const normalizedEmail = email.trim().toLocaleLowerCase("en-US");
-    const normalizedName = displayName.trim();
-    if (
-      normalizedEmail.length > 254 ||
-      !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)
-    ) {
-      throw new Error("Invalid email address");
-    }
-    if (!normalizedName || normalizedName.length > 120) {
-      throw new Error("Invalid display name");
-    }
-    if (password.length < 12 || password.length > 512) {
-      throw new Error("Password must contain 12 to 512 characters");
-    }
-
-    const sql = getDb();
-    const userId = crypto.randomUUID();
-    const passwordHash = await hashPassword(password);
-    await sql.begin(async (transaction) => {
-      await transaction`
-        INSERT INTO users (
-          id, email, display_name, email_verified, is_active
-        ) VALUES (
-          ${userId}, ${normalizedEmail}, ${normalizedName}, true, true
-        )
-      `;
-      await transaction`
-        INSERT INTO auth_accounts (
-          id, account_id, provider_id, user_id, password
-        ) VALUES (
-          ${crypto.randomUUID()}, ${userId}, 'credential', ${userId},
-          ${passwordHash}
-        )
-      `;
-    });
-    console.log(`Created user ${normalizedEmail}.`);
-  } finally {
-    await closeDb();
+  const email = Deno.env.get("FAKTUROMAT_ADMIN_EMAIL")?.trim().toLowerCase();
+  const name = Deno.env.get("FAKTUROMAT_ADMIN_NAME")?.trim();
+  const password = Deno.env.get("FAKTUROMAT_ADMIN_PASSWORD");
+  const index = Deno.args.indexOf("--output");
+  const output = index >= 0 ? Deno.args[index + 1] : undefined;
+  if (
+    !email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254 ||
+    !name || name.length > 120 || !password || password.length < 12 ||
+    password.length > 512 || !output
+  ) {
+    throw new Error(
+      "Set FAKTUROMAT_ADMIN_EMAIL, FAKTUROMAT_ADMIN_NAME, FAKTUROMAT_ADMIN_PASSWORD (12–512 characters), and pass --output /secure/path/user.sql",
+    );
   }
+  const id = crypto.randomUUID();
+  const hash = await hashPassword(password);
+  const script =
+    `INSERT INTO users (id,email,display_name,email_verified,is_active) VALUES (${
+      sqlLiteral(id)
+    },${sqlLiteral(email)},${
+      sqlLiteral(name)
+    },1,1);\nINSERT INTO auth_accounts (id,account_id,provider_id,user_id,password) VALUES (${
+      sqlLiteral(crypto.randomUUID())
+    },${sqlLiteral(id)},'credential',${sqlLiteral(id)},${sqlLiteral(hash)});\n`;
+  const file = await Deno.open(output, {
+    write: true,
+    createNew: true,
+    mode: 0o600,
+  });
+  try {
+    await file.write(new TextEncoder().encode(script));
+  } finally {
+    file.close();
+  }
+  console.log(
+    "Created bootstrap SQL. Import it into D1, then remove the file and bootstrap password.",
+  );
 }

@@ -1,17 +1,17 @@
 import type { BankAccount } from "@/domain/banking/types.ts";
 import type { BankAccountRepository } from "@/repositories/bank_account_repository.ts";
 import {
-  PostgresBankAccountRepository,
+  D1BankAccountRepository,
 } from "@/repositories/bank_account_repository.ts";
 import {
-  PostgresBankConnectionRepository,
+  D1BankConnectionRepository,
 } from "@/repositories/bank_connection_repository.ts";
 import type { BankTransactionRepository } from "@/repositories/bank_transaction_repository.ts";
 import {
-  PostgresBankTransactionRepository,
+  D1BankTransactionRepository,
 } from "@/repositories/bank_transaction_repository.ts";
 import {
-  PostgresInvoicePaymentRepository,
+  D1InvoicePaymentRepository,
 } from "@/repositories/invoice_payment_repository.ts";
 import {
   BankConnectionCredentialError,
@@ -208,12 +208,12 @@ export class BankSyncService {
 }
 
 export function createBankSyncService(): BankSyncService {
-  const connectionRepository = new PostgresBankConnectionRepository();
+  const connectionRepository = new D1BankConnectionRepository();
   return new BankSyncService(
     createBankConnectionService(connectionRepository),
-    new PostgresBankAccountRepository(),
-    new PostgresBankTransactionRepository(),
+    new D1BankAccountRepository(),
+    new D1BankTransactionRepository(),
     new FioBankProvider(),
-    new InvoicePaymentService(new PostgresInvoicePaymentRepository()),
+    new InvoicePaymentService(new D1InvoicePaymentRepository()),
   );
 }

@@ -1,6 +1,6 @@
 import { define } from "@/utils.ts";
 import { isUuid } from "@/domain/organizations/types.ts";
-import { PostgresExpenseAttachmentRepository } from "@/repositories/expense_attachment_repository.ts";
+import { D1ExpenseAttachmentRepository } from "@/repositories/expense_attachment_repository.ts";
 import { isValidCsrfToken } from "@/services/csrf_service.ts";
 import {
   ExpenseAttachmentService,
@@ -26,7 +26,7 @@ export const handler = define.handlers({
     }
     try {
       const attachment = await new ExpenseAttachmentService(
-        new PostgresExpenseAttachmentRepository(),
+        new D1ExpenseAttachmentRepository(),
         getObjectStorage(),
       ).upload({
         organizationId: ctx.params.organizationId,

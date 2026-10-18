@@ -3,7 +3,7 @@ import { Head } from "fresh/runtime";
 import { define } from "@/utils.ts";
 import type { Contact } from "@/domain/contacts/types.ts";
 import { contactTypeLabel } from "@/domain/contacts/types.ts";
-import { PostgresContactRepository } from "@/repositories/contact_repository.ts";
+import { D1ContactRepository } from "@/repositories/contact_repository.ts";
 
 interface ContactListData {
   contacts: Contact[];
@@ -15,7 +15,7 @@ export const handler = define.handlers<ContactListData>({
   async GET(ctx) {
     const search = (ctx.url.searchParams.get("q") ?? "").trim().slice(0, 200);
     const includeArchived = ctx.url.searchParams.get("archived") === "1";
-    const contacts = await new PostgresContactRepository().listForUser({
+    const contacts = await new D1ContactRepository().listForUser({
       organizationId: ctx.params.organizationId,
       userId: ctx.state.user!.id,
       search,

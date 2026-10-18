@@ -8,7 +8,7 @@ import type {
   DashboardPeriod,
   DashboardPeriodPreset,
 } from "@/domain/dashboard/types.ts";
-import { PostgresDashboardRepository } from "@/repositories/dashboard_repository.ts";
+import { D1DashboardRepository } from "@/repositories/dashboard_repository.ts";
 import {
   currentPragueDate,
   resolveDashboardPeriod,
@@ -22,7 +22,7 @@ interface PageData {
 export const handler = define.handlers<PageData>({
   async GET(ctx) {
     const period = resolveDashboardPeriod(ctx.url.searchParams);
-    const overview = await new PostgresDashboardRepository().getForUser({
+    const overview = await new D1DashboardRepository().getForUser({
       organizationId: ctx.params.organizationId,
       userId: ctx.state.user!.id,
       dateFrom: period.dateFrom,

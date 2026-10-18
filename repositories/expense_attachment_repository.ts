@@ -1,4 +1,4 @@
-import type { Sql } from "postgres";
+import type { Sql } from "@/database/d1.ts";
 import { getDb } from "@/database/client.ts";
 import type {
   ExpenseAttachment,
@@ -60,11 +60,11 @@ export interface ExpenseAttachmentRepository {
 }
 
 const COLUMNS = `
-  id, organization_id, expense_id, filename, mime_type, size::text,
+  id, organization_id, expense_id, filename, mime_type, size,
   storage_key, sha256, created_at
 `;
 
-export class PostgresExpenseAttachmentRepository
+export class D1ExpenseAttachmentRepository
   implements ExpenseAttachmentRepository {
   constructor(private readonly sql: Sql = getDb()) {}
 
@@ -96,7 +96,7 @@ export class PostgresExpenseAttachmentRepository
       `
       SELECT attachments.id, attachments.organization_id,
         attachments.expense_id, attachments.filename, attachments.mime_type,
-        attachments.size::text, attachments.storage_key,
+        attachments.size, attachments.storage_key,
         attachments.sha256, attachments.created_at
       FROM attachments
       JOIN expenses
@@ -124,7 +124,7 @@ export class PostgresExpenseAttachmentRepository
       `
       SELECT attachments.id, attachments.organization_id,
         attachments.expense_id, attachments.filename, attachments.mime_type,
-        attachments.size::text, attachments.storage_key,
+        attachments.size, attachments.storage_key,
         attachments.sha256, attachments.created_at
       FROM attachments
       JOIN expenses

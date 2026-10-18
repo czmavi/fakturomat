@@ -1,3 +1,4 @@
+import { fontBytes } from "./font_bytes.ts";
 import fontkit from "@pdf-lib/fontkit";
 import {
   PageSizes,
@@ -68,9 +69,8 @@ function themeFromTemplate(template: InvoiceTemplateVersion): Theme {
   };
 }
 
-async function readFont(specifier: string): Promise<Uint8Array> {
-  const url = new URL(import.meta.resolve(specifier));
-  return await Deno.readFile(url);
+function readFont(specifier: string): Promise<Uint8Array> {
+  return fontBytes(specifier.includes("Bold"));
 }
 
 async function embedFonts(document: PDFDocument): Promise<EmbeddedFonts> {

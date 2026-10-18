@@ -1,4 +1,4 @@
-import type { Sql } from "postgres";
+import type { Sql } from "@/database/d1.ts";
 import { getDb } from "@/database/client.ts";
 import type {
   CurrencyAmount,
@@ -47,7 +47,7 @@ export interface DashboardRepository {
   }): Promise<DashboardOverview | null>;
 }
 
-export class PostgresDashboardRepository implements DashboardRepository {
+export class D1DashboardRepository implements DashboardRepository {
   constructor(private readonly sql: Sql = getDb()) {}
 
   async getForUser(input: {
@@ -63,16 +63,16 @@ export class PostgresDashboardRepository implements DashboardRepository {
         FROM organization_memberships
         WHERE organization_id = ${input.organizationId}
           AND user_id = ${input.userId}
-        FOR SHARE
+
       `;
       if (!memberships[0]) return null;
 
       const bankBalances = await transaction<BalanceRow[]>`
         SELECT bank_accounts.id AS bank_account_id,
           bank_accounts.name AS bank_account_name,
-          bank_connections.current_balance::text AS amount,
+          bank_connections.current_balance AS amount,
           bank_connections.balance_currency AS currency,
-          bank_connections.balance_date::text AS date
+          bank_connections.balance_date AS date
         FROM bank_connections
         JOIN bank_accounts
           ON bank_accounts.id = bank_connections.bank_account_id
@@ -84,12 +84,12 @@ export class PostgresDashboardRepository implements DashboardRepository {
           bank_accounts.id
       `;
       const issuedInvoices = await transaction<AggregateRow[]>`
-        SELECT currency, count(*)::integer AS count,
-          SUM(total)::text AS amount
+        SELECT currency, count(*) AS count,
+          SUM(total) AS amount
         FROM invoices
         WHERE organization_id = ${input.organizationId}
           AND status IN ('ISSUED', 'PAID')
-          AND issue_date BETWEEN ${input.dateFrom}::date AND ${input.dateTo}::date
+          AND issue_date BETWEEN ${input.dateFrom} AND ${input.dateTo}
         GROUP BY currency
         ORDER BY currency
       `;
@@ -106,44 +106,44 @@ export class PostgresDashboardRepository implements DashboardRepository {
             AND invoices.status = 'ISSUED'
           GROUP BY invoices.id
         )
-        SELECT currency, count(*)::integer AS count,
-          SUM(remaining)::text AS amount,
-          count(*) FILTER (WHERE due_date < ${input.today}::date)::integer
+        SELECT currency, count(*) AS count,
+          SUM(remaining) AS amount,
+          count(*) FILTER (WHERE due_date < ${input.today})
             AS overdue_count,
           COALESCE(
-            SUM(remaining) FILTER (WHERE due_date < ${input.today}::date), 0
-          )::text AS overdue_amount
+            SUM(remaining) FILTER (WHERE due_date < ${input.today}), 0
+          ) AS overdue_amount
         FROM outstanding
         WHERE remaining > 0
         GROUP BY currency
         ORDER BY currency
       `;
       const income = await transaction<AggregateRow[]>`
-        SELECT currency, count(*)::integer AS count,
-          SUM(amount)::text AS amount
+        SELECT currency, count(*) AS count,
+          SUM(amount) AS amount
         FROM bank_transactions
         WHERE organization_id = ${input.organizationId}
-          AND booking_date BETWEEN ${input.dateFrom}::date AND ${input.dateTo}::date
+          AND booking_date BETWEEN ${input.dateFrom} AND ${input.dateTo}
           AND amount > 0
         GROUP BY currency
         ORDER BY currency
       `;
       const expenses = await transaction<AggregateRow[]>`
-        SELECT currency, count(*)::integer AS count,
-          SUM(total_amount)::text AS amount
+        SELECT currency, count(*) AS count,
+          SUM(total_amount) AS amount
         FROM expenses
         WHERE organization_id = ${input.organizationId}
-          AND COALESCE(issue_date, created_at::date)
-            BETWEEN ${input.dateFrom}::date AND ${input.dateTo}::date
+          AND COALESCE(issue_date, date(created_at / 1000, 'unixepoch'))
+            BETWEEN ${input.dateFrom} AND ${input.dateTo}
         GROUP BY currency
         ORDER BY currency
       `;
       const cashflow = await transaction<AggregateRow[]>`
-        SELECT currency, count(*)::integer AS count,
-          SUM(amount)::text AS amount
+        SELECT currency, count(*) AS count,
+          SUM(amount) AS amount
         FROM bank_transactions
         WHERE organization_id = ${input.organizationId}
-          AND booking_date BETWEEN ${input.dateFrom}::date AND ${input.dateTo}::date
+          AND booking_date BETWEEN ${input.dateFrom} AND ${input.dateTo}
         GROUP BY currency
         ORDER BY currency
       `;
@@ -174,12 +174,12 @@ export class PostgresDashboardRepository implements DashboardRepository {
           FROM bank_transactions
           WHERE bank_transactions.organization_id = ${input.organizationId}
             AND bank_transactions.booking_date
-              BETWEEN ${input.dateFrom}::date AND ${input.dateTo}::date
+              BETWEEN ${input.dateFrom} AND ${input.dateTo}
         )
-        SELECT count(*) FILTER (WHERE remaining > 0)::integer AS total_count,
-          count(*) FILTER (WHERE amount > 0 AND remaining > 0)::integer
+        SELECT count(*) FILTER (WHERE remaining > 0) AS total_count,
+          count(*) FILTER (WHERE amount > 0 AND remaining > 0)
             AS incoming_count,
-          count(*) FILTER (WHERE amount < 0 AND remaining > 0)::integer
+          count(*) FILTER (WHERE amount < 0 AND remaining > 0)
             AS outgoing_count
         FROM transaction_allocations
       `;

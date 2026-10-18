@@ -6,7 +6,7 @@ import ContactForm, {
   EMPTY_CONTACT,
 } from "@/components/ContactForm.tsx";
 import type { ContactFormInput } from "@/domain/contacts/types.ts";
-import { PostgresContactRepository } from "@/repositories/contact_repository.ts";
+import { D1ContactRepository } from "@/repositories/contact_repository.ts";
 import {
   ContactService,
   ContactValidationError,
@@ -39,7 +39,7 @@ export const handler = define.handlers<PageData>({
       );
     }
     try {
-      const contact = await new ContactService(new PostgresContactRepository())
+      const contact = await new ContactService(new D1ContactRepository())
         .create({
           ...values,
           organizationId: ctx.params.organizationId,

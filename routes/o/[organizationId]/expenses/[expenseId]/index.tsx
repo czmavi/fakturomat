@@ -12,9 +12,9 @@ import {
   parseMoneyToMinorUnits,
 } from "@/domain/invoices/money.ts";
 import { isUuid } from "@/domain/organizations/types.ts";
-import { PostgresExpenseAttachmentRepository } from "@/repositories/expense_attachment_repository.ts";
-import { PostgresExpensePaymentRepository } from "@/repositories/expense_payment_repository.ts";
-import { PostgresExpenseRepository } from "@/repositories/expense_repository.ts";
+import { D1ExpenseAttachmentRepository } from "@/repositories/expense_attachment_repository.ts";
+import { D1ExpensePaymentRepository } from "@/repositories/expense_payment_repository.ts";
+import { D1ExpenseRepository } from "@/repositories/expense_repository.ts";
 
 interface PageData {
   expense: Expense;
@@ -32,17 +32,17 @@ export const handler = define.handlers<PageData>({
       return new Response("Stránka nebyla nalezena.", { status: 404 });
     }
     const [expense, attachments, payments] = await Promise.all([
-      new PostgresExpenseRepository().findForUser(
+      new D1ExpenseRepository().findForUser(
         ctx.params.organizationId,
         ctx.params.expenseId,
         ctx.state.user!.id,
       ),
-      new PostgresExpenseAttachmentRepository().listForExpenseForUser(
+      new D1ExpenseAttachmentRepository().listForExpenseForUser(
         ctx.params.organizationId,
         ctx.params.expenseId,
         ctx.state.user!.id,
       ),
-      new PostgresExpensePaymentRepository().listForExpenseForUser(
+      new D1ExpensePaymentRepository().listForExpenseForUser(
         ctx.params.organizationId,
         ctx.params.expenseId,
         ctx.state.user!.id,

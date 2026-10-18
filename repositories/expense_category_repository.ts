@@ -1,4 +1,4 @@
-import type { Sql } from "postgres";
+import type { Sql } from "@/database/d1.ts";
 import { getDb } from "@/database/client.ts";
 import type {
   ExpenseCategory,
@@ -56,8 +56,7 @@ const COLUMNS = `
   id, organization_id, name, is_active, created_at, updated_at
 `;
 
-export class PostgresExpenseCategoryRepository
-  implements ExpenseCategoryRepository {
+export class D1ExpenseCategoryRepository implements ExpenseCategoryRepository {
   constructor(private readonly sql: Sql = getDb()) {}
 
   async listForUser(
@@ -134,7 +133,7 @@ export class PostgresExpenseCategoryRepository
     const rows = await this.sql.unsafe<ExpenseCategoryRow[]>(
       `
       UPDATE expense_categories
-      SET name = $1, is_active = $2, updated_at = now()
+      SET name = $1, is_active = $2, updated_at = CAST(unixepoch('subsec') * 1000 AS INTEGER)
       WHERE id = $3 AND organization_id = $4
         AND EXISTS (
           SELECT 1 FROM organization_memberships

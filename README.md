@@ -2,7 +2,8 @@
 
 Interní webová aplikace pro správu faktur, nákladových dokladů a bankovních
 transakcí více nezávislých subjektů. Projekt používá Deno, Fresh 2, Preact,
-TypeScript v strict režimu a PostgreSQL přes `postgres.js`.
+TypeScript v strict režimu a Cloudflare Workers. Celá databáze včetně Better
+Auth běží v D1 (SQLite); PDF, loga a přílohy jsou v privátním R2.
 
 Verze v1 je dokončena včetně všech etap 1 až 20: aplikační bootstrap, migrace,
 interní přihlášení, organizace, tenant scope, nastavení subjektu, bankovní účty
@@ -31,118 +32,53 @@ historických i párovacích dat.
 
 ## Lokální spuštění
 
-Požadavky: Deno 2.9+ a PostgreSQL. Vývojovou databázi lze spustit přes Docker:
+Požadavkem je Deno 2.9+. Lokální D1 a R2 zajišťuje Cloudflare emulátor:
 
 ```sh
-docker compose up -d postgres
-cp .env.example .env
-deno install
+deno install --frozen-lockfile
+cp .dev.vars.example .dev.vars
 deno task migrate:local
-deno task user:create
+deno task user:create --output /tmp/fakturomat-user.sql
+deno run -A npm:wrangler d1 execute DB --local --file /tmp/fakturomat-user.sql
 deno task dev
 ```
 
-Před `user:create` změňte v `.env` e-mail, jméno a zejména bootstrap heslo.
-Heslo musí mít alespoň 12 znaků. Po vytvoření uživatele proměnnou
-`FAKTUROMAT_ADMIN_PASSWORD` z `.env` odstraňte. Aplikace je dostupná na adrese,
-kterou vypíše Vite (standardně `http://localhost:5173`).
+Před vytvořením uživatele nastavte v `.dev.vars` vlastní bootstrap heslo,
+`BETTER_AUTH_SECRET` a stabilní 32bajtový Base64
+`BANK_CREDENTIALS_ENCRYPTION_KEY`. Po importu uživatele SQL soubor i bootstrap
+heslo odstraňte. Aplikace standardně běží na `http://localhost:5173`.
 
-Před prvním uložením Fio připojení nastavte v `.env` stálý 32bajtový šifrovací
-klíč v Base64, například výstupem `openssl rand -base64 32`. Klíč bezpečně
-zálohujte; bez něj uložené tokeny nelze obnovit a jeho změna vyžaduje jejich
-nové zadání.
+## Nasazení a přenos dat
 
-Pro produkční sestavení:
+[Cloudflare migrační návod](CLOUDFLARE_MIGRATION.md) obsahuje založení Workers,
+D1 a R2, nastavení secrets, přenos PostgreSQL dat, ověření a rollback.
+`deno task data:export --output /secure/path/fakturomat.import.sql` připraví
+ověřený SQL import ze zdroje v `SOURCE_DATABASE_URL`. Export vyžaduje stav bez
+souborů a zapisuje pouze do nového lokálního souboru, nikoli do zdrojové DB.
+
+Pro nový Worker nastavte bindingy `DB`, `DOCUMENTS`, `FILES`, veřejný origin
+`BETTER_AUTH_URL`, `APP_ENV=production` a secrets uvedené výše. Import
+nákladových PDF navíc používá `OPENAI_API_KEY` a případně
+`OPENAI_EXPENSE_MODEL`.
 
 ```sh
 deno task build
-deno task start
+deno run -A npm:wrangler deploy
 ```
-
-Migrace spouštějte před startem každé nové verze samostatným příkazem. Migrační
-runner používá PostgreSQL advisory lock, takže je bezpečný i při souběžném
-spuštění více instancí. Produkční konfigurace, pořadí releasu, reverzní proxy,
-zálohy, obnovu a smoke test popisuje [DEPLOYMENT.md](DEPLOYMENT.md).
-
-## Proměnné prostředí
-
-- `DATABASE_URL` – povinný PostgreSQL connection string.
-- `DATABASE_MAX_CONNECTIONS` – velikost connection poolu, výchozí hodnota `10`.
-- `BETTER_AUTH_URL` – veřejný origin aplikace bez cesty, lokálně například
-  `http://localhost:5173`.
-- `BETTER_AUTH_SECRET` – náhodný tajný klíč pro podepisování cookies Better
-  Auth; vytvořte jej jednou například pomocí `openssl rand -base64 32`.
-- `APP_ENV` – `development`, `test` nebo `production`; v produkci přidává
-  session a CSRF cookies atribut `Secure`.
-- `FAKTUROMAT_ADMIN_EMAIL`, `FAKTUROMAT_ADMIN_NAME` a
-  `FAKTUROMAT_ADMIN_PASSWORD` – pouze pro jednorázový příkaz `user:create`.
-- `TEST_DATABASE_URL` – volitelná izolovaná PostgreSQL databáze pro integrační
-  testy. Bez ní se DB integrační test korektně přeskočí.
-- `STORAGE_LOCAL_ROOT` – lokální úložiště log a příloh nákladů, výchozí
-  `./data/storage`.
-- `LOCAL_STORAGE_PATH` – lokální úložiště PDF faktur, výchozí
-  `./data/documents`.
-- `S3_BUCKET` – privátní bucket pro PDF faktur. Bez této hodnoty se používá
-  disk; s ní je nefunkční S3 konfigurace chybou, nikdy důvodem pro fallback na
-  disk.
-- `S3_REGION`, případně `AWS_REGION` – region S3, v tomto pořadí. Credentials
-  řeší standardní AWS SDK v3 provider chain.
-- `BANK_CREDENTIALS_ENCRYPTION_KEY` – povinný 32bajtový Base64 klíč pro
-  aplikační AES-256-GCM šifrování bankovních přihlašovacích údajů.
 
 ## Vývojové kontroly
 
 ```sh
 deno task check
 deno task test
-deno task build
+deno task test:startup
 ```
 
-Databázové integrační testy spusťte proti samostatné databázi:
-
-```sh
-TEST_DATABASE_URL=postgres://fakturomat:fakturomat@127.0.0.1:55433/fakturomat deno task test
-```
-
-Testovací URL nikdy nesmí odkazovat na produkční databázi.
-
-`check` spouští formatter check, lint a type check. Integrační testy ověřují
-přihlášení, revokaci session, izolaci organizací, celý lifecycle kontaktu a
-souběžné vytváření neměnných verzí šablon. Ověřují také vytvoření a úpravu
-konceptu, přesnou desetinnou aritmetiku a souběžné vystavení faktur bez
-duplicitních čísel. Po změně kontaktu, subjektu, účtu i šablony test znovu ověří
-historické snapshoty. Vytvořená testovací data po sobě odstraní. Samostatné
-testy kontrolují přesný SPAYD payload, odvození českého IBANu, validaci
-platebních údajů a bezpečný SVG výstup. PDF testy ověřují SHA-256 integritu,
-neměnnost metadat i bajtů po změně šablony a úplný rollback vystavení při chybě
-rendereru. Evidence nákladů je integračně otestovaná včetně vytvoření, načtení a
-úpravy, výchozích a vlastních kategorií, kombinovaných filtrů a odmítnutí cizích
-kontaktů i kategorií z jiného subjektu. Testy řádků DPH ověřují více sazeb,
-vlastní desetinnou sazbu, nulový počet řádků, přesné součty a povolený rozdíl
-proti celkové částce. Přílohy jsou otestované od validace skutečné signatury
-přes SHA-256 kontrolu až po odmítnutí čtení a odstranění uživatelem bez
-membership. Bankovní testy kontrolují AES-GCM vazbu ciphertextu na konkrétní
-subjekt a účet, nepropustnost tokenu do veřejného modelu, tenantovou izolaci
-databázových dotazů a read-only GET komunikaci i mapování odpovědí Fio API.
-Databázový scénář navíc opakuje import stejného výpisu, kontroluje nulové
-duplicity, přesné částky, zachované raw JSON a odmítnutí synchronizace
-uživatelem bez membership. Párovací scénář ověřuje automatickou přesnou shodu,
-odmítnutí nejednoznačné shody, ruční přiřazení, zrušení vazby a odpovídající
-přechody faktury mezi stavy `ISSUED` a `PAID`. Samostatný scénář odchozích
-pohybů ověřuje částečné úhrady nákladu, omezení poslední alokace zbývající
-částkou, zrušení vazby a tenantovou izolaci. Dashboardové integrační kontroly
-ověřují oddělené měnové agregace faktur, nákladů a bankovních pohybů, zbývající
-částky nezaplacených faktur, splatnost, dostupný zůstatek, nespárované pohyby a
-odmítnutí uživatele bez membership. Samostatné testy pokrývají kalendářní
-hranice všech přednastavených i vlastních období. Bezpečnostní regresní testy
-ověřují CSP a ostatní hlavičky, produkční HSTS, zachování přísnější politiky
-downloadů, limit deklarované velikosti požadavku, CSS escape varianty a
-databázové odmítnutí změn či přealokovaných plateb. HTTP integrační scénář navíc
-prochází skutečné Fresh middleware a formulářové handlery: ověřuje origin i
-double-submit CSRF, bezpečné session cookies a jejich revokaci, limit požadavku,
-tenantovou odpověď 404 pro čtení i změnu a kompletní tok přijaté faktury od
-kontaktu a dvou DPH řádků přes PDF přílohu až po ruční spárování odchozí
-bankovní transakce.
+Testy D1 používají izolovanou SQLite databázi a nevyžadují `TEST_DATABASE_URL`.
+Pokrývají přihlášení, tenant scope, vystavení PDF, integritu, párování plateb,
+rollback, opakování při konfliktu a převod dat. Startup test používá skutečný
+workerd s lokální D1 a R2. Historické PostgreSQL integrační scénáře jsou
+archivované v `tests/legacy_postgres/` a nejsou součástí aktivní sady.
 
 ## Architektura
 
@@ -151,8 +87,9 @@ bankovní transakce.
 - `services/` – integrace Better Auth, cookies a CSRF orchestrace;
 - `services/banking/` – šifrování přihlašovacích údajů a provider integrace;
 - `repositories/` – parametrizované databázové dotazy;
-- `database/` – PostgreSQL klient a migrační runner;
-- `migrations/` – neměnné, verzované SQL migrace;
+- `database/` – D1 SQL klient, atomické plány zápisů a převod částek;
+- `migrations/d1/` – SQLite schéma a integritní triggery;
+- `migrations/*.sql` – historické PostgreSQL migrace;
 - `scripts/` – provozní CLI příkazy.
 
 ## Dokumentace
@@ -174,10 +111,8 @@ Business routes používají explicitní scope `/o/:organizationId/...`. Scope
 middleware přijme organizaci pouze tehdy, když dotaz současně odpovídá jejímu ID
 a membership aktuálního uživatele. Cizí i neplatné ID skončí odpovědí 404.
 
-Logo není uloženo v PostgreSQL. Databáze obsahuje pouze náhodný storage key a
-MIME typ. Lokální implementace zapisuje soubory atomicky, odmítá traversal key a
-upload přijímá pouze PNG, JPEG nebo WebP do velikosti 2 MB s kontrolou signatury
-souboru.
+Logo je uložené v privátním R2; D1 obsahuje pouze náhodný storage key a MIME
+typ. Upload přijímá PNG, JPEG nebo WebP do 2 MB s kontrolou signatury a klíče.
 
 Výchozí fakturační šablony jsou globální a pouze pro čtení. První úprava vytvoří
 vlastní kopii pro aktivní subjekt a každé další uložení její novou neměnnou
@@ -188,8 +123,8 @@ PDF náhled je dostupný jen členům příslušného subjektu.
 
 Koncept faktury drží živé reference na kontakt, bankovní účet, číselnou řadu a
 šablonu. Dokud je ve stavu `DRAFT`, lze měnit jeho hlavičku i položky. Částky se
-v TypeScriptu počítají přes `bigint` v nejmenších měnových jednotkách a v
-PostgreSQL se ukládají jako `numeric`, nikdy jako floating point. Definitivní
+v TypeScriptu počítají přes `bigint` v nejmenších měnových jednotkách a v D1 se
+ukládají jako celé desetitisíciny měny, nikdy jako floating point. Definitivní
 číslo, snapshoty a konkrétní verze šablony se doplní společně v jedné databázové
 transakci při vystavení. Databázové triggery následně blokují změny obsahu i
 položek vystavené faktury.
@@ -214,12 +149,10 @@ nikdy signed URL ani credentials. Triggery chrání neměnnost dokumentu. Pokud
 upload uspěje a dokončení v DB selže, aplikace vypíše warning s identifikací
 orphaned objektu a nemaže jej.
 
-Stávající endpoint `/o/:organizationId/invoices/:invoiceId/document.pdf` ověří
-uživatele a organization scope. Lokální PDF vrací přímo po kontrole hashe a
-velikosti. Pro S3 vrátí HTTP 302 s novým signed URL na 300 sekund, PDF MIME
-typem a bezpečným názvem `faktura-<číslo>.pdf`. Výchozí zobrazení je inline,
-`?download=1` použije attachment. Odpovědi se necachují. Postup konfigurace, IAM
-oprávnění a testování je v [DOCUMENT_STORAGE.md](DOCUMENT_STORAGE.md).
+Endpoint `/o/:organizationId/invoices/:invoiceId/document.pdf` ověří uživatele a
+organization scope, načte PDF z R2 a zkontroluje SHA-256 a velikost. Výchozí
+zobrazení je inline, `?download=1` použije attachment. Odpovědi se necachují.
+Podrobnosti jsou v [DOCUMENT_STORAGE.md](DOCUMENT_STORAGE.md).
 
 Náklady jsou vedené jako jednoduchá interní evidence v tabulkách `expenses` a
 `expense_categories`. Kontakt i kategorie jsou volitelné, ale případná vazba je
@@ -234,12 +167,12 @@ celková částka používají přesnou money abstraction. Formulář i detail z
 součty základů a daně; rozdíl oproti celkové částce vyvolá upozornění, ale
 neblokuje uložení ručně opsaných hodnot.
 
-Přílohy nákladů používají lokální object storage abstraction společně s logy.
-PostgreSQL drží pouze organization-scoped metadata, původní bezpečně
-normalizovaný název, MIME typ, velikost, náhodný storage key a SHA-256. Upload
-má limit 20 MB a povoluje pouze PDF, JPEG a PNG po kontrole binární signatury.
-Zobrazení i stažení před odesláním kontroluje hash a velikost uloženého objektu;
-odstranění chrání CSRF token i tenantový scope.
+Přílohy nákladů používají privátní R2 společně s logy. D1 drží pouze
+organization-scoped metadata, původní bezpečně normalizovaný název, MIME typ,
+velikost, náhodný storage key a SHA-256. Upload má limit 20 MB a povoluje pouze
+PDF, JPEG a PNG po kontrole binární signatury. Zobrazení i stažení před
+odesláním kontroluje hash a velikost uloženého objektu; odstranění chrání CSRF
+token i tenantový scope.
 
 Bankovní účet a jeho API připojení jsou oddělené modely. Fio token se před
 uložením šifruje AES-256-GCM s náhodným IV a s identitou organizace, účtu a
@@ -285,7 +218,10 @@ HTTP a databázové závěry etapy 18 jsou popsané v [SECURITY.md](SECURITY.md)
 včetně hranic důvěry, implementovaných kontrol, zbytkových rizik a provozních
 požadavků na TLS, rate limiting a maximální velikost těla na reverzní proxy.
 
-## Migrace
+## Historie PostgreSQL migrací
+
+Následující seznam dokumentuje původní databázi. Nové nasazení používá
+`migrations/d1/`; provozní postup je v `CLOUDFLARE_MIGRATION.md`.
 
 - `0001_auth.sql` – tabulky `users` a `sessions`, unikátní a aktivní session
   indexy a integritní constraints.
@@ -332,10 +268,7 @@ požadavků na TLS, rate limiting a maximální velikost těla na reverzní prox
 ## Známá omezení v1
 
 - Zatím není UI pro změnu nebo obnovu hesla; uživatel se zakládá přes CLI.
-- Omezení chybných přihlášení v Better Auth je lokální pro jednu aplikační
-  instanci; distribuovaný limit musí zajistit reverzní proxy. Externí identity
-  provider není nakonfigurován.
-- Auth integrační test vyžaduje explicitní `TEST_DATABASE_URL`.
+- Externí identity provider není nakonfigurován. Rate limit Better Auth je v D1.
 - Pozvání dalších uživatelů a správa memberships zatím nemají UI.
 - Správa instalační knihovny globálních šablon nemá UI; subjekty upravují pouze
   své vlastní kopie.
@@ -354,7 +287,34 @@ Prioritizovaný seznam provozních, bezpečnostních a produktových pokračová
 [BACKLOG.md](BACKLOG.md). Účetnictví, daňová podání, sklad a platební příkazy
 zůstávají mimo zamýšlený produkt.
 
-Migrace `0019_invoice_document_storage.sql` doplňuje provider/ETag a odkládá
-ověření vydané faktury u nového dokumentu na COMMIT. Původní dokumenty zůstávají
-lokální; před upgradem nastavte `LOCAL_STORAGE_PATH` na jejich původní storage
-root (obvykle `./data/storage`).
+Původní migrace `0019_invoice_document_storage.sql` zavedla local/S3 metadata.
+Přenos do současné D1/R2 architektury popisuje `CLOUDFLARE_MIGRATION.md`.
+
+## Náklady z PDF faktur
+
+Na stránce **Náklady → Přidat náklad** vyberte PDF (nejvýše 20 MB) a použijte
+**Načíst a ověřit fakturu**. Server odešle PDF do OpenAI Responses API se
+strukturovaným výstupem, předvyplní dodavatele, číslo dokladu, data, popis,
+měnu, celkovou částku a rozpis DPH. Před uložením údaje zkontrolujte a případně
+upravte. Původní PDF se uloží jako příloha společně s nákladem.
+
+Na serveru nastavte `OPENAI_API_KEY`; volitelný `OPENAI_EXPENSE_MODEL` má
+výchozí hodnotu `gpt-4.1-mini`. Klíč se neposílá do prohlížeče. Integrace
+používá
+[`input_file`](https://developers.openai.com/api/docs/guides/file-inputs) a
+[Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs),
+`store: false` a timeout 90 sekund.
+
+Odběratel musí mít shodné IČO nebo DIČ s právě vybranou firmou (firmou v URL).
+Pokud jsou na obou stranách uvedené oba identifikátory, musí se shodovat oba.
+Ignorují se pouze mezery a velikost písmen. Samotný název firmy nestačí. Neshoda
+nebo chybějící identifikátory import zastaví. Nejde o kontrolu existence firmy v
+registru ARES. Ověření je podepsané, vázané na soubor, firmu a uživatele, platí
+jednu hodinu a při uložení se porovnává s aktuálním nastavením firmy. Po chybě
+odeslaného formuláře je nutné PDF vybrat a načíst znovu.
+
+Lokální `deno task dev` nejprve vytvoří build a spustí jej ve Wrangleru na portu
+5173 se skutečnými lokálními D1/R2 bindingy. Po změně zdrojů příkaz spusťte
+znovu; automatické HMR nyní není zapnuté kvůli nekompatibilitě vývojových
+runnerů Fresh a Cloudflare Vite pluginu. `deno task start` spustí již existující
+build.

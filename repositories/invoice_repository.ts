@@ -1,4 +1,5 @@
-import type { Sql, TransactionSql } from "postgres";
+import { money } from "@/database/d1.ts";
+import type { Sql, TransactionSql } from "@/database/d1.ts";
 import { getDb } from "@/database/client.ts";
 import type {
   BankAccountSnapshot,
@@ -193,7 +194,7 @@ const INVOICE_SELECT = `
   selected_version.version AS template_version_number,
   invoices.number, invoices.variable_symbol, invoices.status,
   invoices.issue_date, invoices.due_date, invoices.currency,
-  invoices.subtotal::text, invoices.total::text, invoices.note,
+  invoices.subtotal, invoices.total, invoices.note,
   invoices.supplier_snapshot, invoices.customer_snapshot,
   invoices.bank_account_snapshot, invoices.issued_at, invoices.issued_by,
   invoices.paid_at, invoices.created_at, invoices.updated_at
@@ -269,7 +270,7 @@ function itemFromRow(row: ItemRow): InvoiceItem {
   };
 }
 
-export class PostgresInvoiceRepository implements InvoiceRepository {
+export class D1InvoiceRepository implements InvoiceRepository {
   constructor(private readonly sql: Sql = getDb()) {}
 
   async listForUser(input: {
@@ -284,7 +285,7 @@ export class PostgresInvoiceRepository implements InvoiceRepository {
       ${INVOICE_JOINS}
       WHERE invoices.organization_id = $1
         AND memberships.user_id = $2
-        AND ($3::text IS NULL OR invoices.status = $3)
+        AND ($3 IS NULL OR invoices.status = $3)
       ORDER BY invoices.issue_date DESC, invoices.created_at DESC, invoices.id
     `,
       [input.organizationId, input.userId, input.status],
@@ -310,8 +311,8 @@ export class PostgresInvoiceRepository implements InvoiceRepository {
     );
     if (!rows[0]) return null;
     const items = await this.sql<ItemRow[]>`
-      SELECT id, invoice_id, description, quantity::text, unit,
-        unit_price::text, total::text, position
+      SELECT id, invoice_id, description, quantity, unit,
+        unit_price, total, position
       FROM invoice_items
       WHERE invoice_id = ${invoiceId}
       ORDER BY position
@@ -330,7 +331,7 @@ export class PostgresInvoiceRepository implements InvoiceRepository {
       if (!await this.referencesAreAvailable(transaction, input, true)) {
         return null;
       }
-      await transaction`
+      transaction.queue(transaction`
         INSERT INTO invoices (
           id, organization_id, contact_id, number_sequence_id,
           bank_account_id, invoice_template_id, variable_symbol, status,
@@ -340,15 +341,17 @@ export class PostgresInvoiceRepository implements InvoiceRepository {
           ${input.numberSequenceId}, ${input.bankAccountId},
           ${input.invoiceTemplateId}, ${input.variableSymbol}, 'DRAFT',
           ${input.issueDate}, ${input.dueDate}, ${input.currency},
-          ${input.subtotal}, ${input.total}, ${input.note}
+          ${money(input.subtotal)}, ${money(input.total)}, ${input.note}
         )
-      `;
+      `);
       await this.insertItems(transaction, input.id, input.items);
-      return await this.findInTransaction(
-        transaction,
-        input.organizationId,
-        input.id,
-        input.userId,
+      return transaction.after(() =>
+        this.findInTransaction(
+          this.sql as TransactionSql,
+          input.organizationId,
+          input.id,
+          input.userId,
+        )
       );
     });
   }
@@ -370,14 +373,14 @@ export class PostgresInvoiceRepository implements InvoiceRepository {
           AND invoices.organization_id = ${input.organizationId}
           AND memberships.user_id = ${input.userId}
           AND invoices.status = 'DRAFT'
-        FOR UPDATE OF invoices
+
       `;
       if (!current[0]) return null;
       if (!await this.referencesAreAvailable(transaction, input, false)) {
         return null;
       }
 
-      await transaction`
+      transaction.queue(transaction`
         UPDATE invoices
         SET contact_id = ${input.contactId},
           number_sequence_id = ${input.numberSequenceId},
@@ -385,19 +388,23 @@ export class PostgresInvoiceRepository implements InvoiceRepository {
           invoice_template_id = ${input.invoiceTemplateId},
           variable_symbol = ${input.variableSymbol},
           issue_date = ${input.issueDate}, due_date = ${input.dueDate},
-          currency = ${input.currency}, subtotal = ${input.subtotal},
-          total = ${input.total}, note = ${input.note}, updated_at = now()
+          currency = ${input.currency}, subtotal = ${money(input.subtotal)},
+          total = ${
+        money(input.total)
+      }, note = ${input.note}, updated_at = CAST(unixepoch('subsec') * 1000 AS INTEGER)
         WHERE id = ${input.id} AND organization_id = ${input.organizationId}
-      `;
-      await transaction`
+      `);
+      transaction.queue(transaction`
         DELETE FROM invoice_items WHERE invoice_id = ${input.id}
-      `;
+      `);
       await this.insertItems(transaction, input.id, input.items);
-      return await this.findInTransaction(
-        transaction,
-        input.organizationId,
-        input.id,
-        input.userId,
+      return transaction.after(() =>
+        this.findInTransaction(
+          this.sql as TransactionSql,
+          input.organizationId,
+          input.id,
+          input.userId,
+        )
       );
     });
   }
@@ -418,18 +425,18 @@ export class PostgresInvoiceRepository implements InvoiceRepository {
       }
     >(async (transaction) => {
       const drafts = await transaction<DraftIssueRow[]>`
-        SELECT invoices.id, invoices.xmin::text AS revision, invoices.status, invoices.contact_id,
+        SELECT invoices.id, invoices.revision AS revision, invoices.status, invoices.contact_id,
           invoices.number_sequence_id, invoices.bank_account_id,
           invoices.invoice_template_id, invoices.variable_symbol,
           invoices.issue_date, invoices.due_date, invoices.currency,
-          invoices.total::text
+          invoices.total
         FROM invoices
         JOIN organization_memberships AS memberships
           ON memberships.organization_id = invoices.organization_id
         WHERE invoices.id = ${input.invoiceId}
           AND invoices.organization_id = ${input.organizationId}
           AND memberships.user_id = ${input.userId}
-        FOR UPDATE OF invoices
+
       `;
       const draft = drafts[0];
       if (!draft) return { kind: "not_found" };
@@ -444,7 +451,7 @@ export class PostgresInvoiceRepository implements InvoiceRepository {
           logo_mime_type, invoice_footer
         FROM organizations
         WHERE id = ${input.organizationId}
-        FOR SHARE
+
       `;
       const customers = await transaction<CustomerRow[]>`
         SELECT type, name, ico, dic, street, city, postal_code, country,
@@ -452,7 +459,7 @@ export class PostgresInvoiceRepository implements InvoiceRepository {
         FROM contacts
         WHERE id = ${draft.contact_id}
           AND organization_id = ${input.organizationId}
-        FOR SHARE
+
       `;
       const bankAccounts = await transaction<BankAccountRow[]>`
         SELECT name, bank_name, account_prefix, account_number, bank_code,
@@ -461,7 +468,7 @@ export class PostgresInvoiceRepository implements InvoiceRepository {
         WHERE id = ${draft.bank_account_id}
           AND organization_id = ${input.organizationId}
           AND is_active
-        FOR SHARE
+
       `;
       const sequences = await transaction<IssueSequenceRow[]>`
         SELECT id, organization_id, name, prefix, padding, is_default,
@@ -470,7 +477,7 @@ export class PostgresInvoiceRepository implements InvoiceRepository {
         WHERE id = ${draft.number_sequence_id}
           AND organization_id = ${input.organizationId}
           AND is_active
-        FOR SHARE
+
       `;
       const templateVersions = await transaction<
         Array<{
@@ -495,12 +502,12 @@ export class PostgresInvoiceRepository implements InvoiceRepository {
             templates.organization_id IS NULL
             OR templates.organization_id = ${input.organizationId}
           )
-        FOR SHARE OF templates, versions
+
       `;
       const lockedItems = await transaction<{ id: string }[]>`
         SELECT id FROM invoice_items
         WHERE invoice_id = ${draft.id}
-        FOR SHARE
+
       `;
       if (
         !suppliers[0] || !customers[0] || !bankAccounts[0] || !sequences[0] ||
@@ -640,21 +647,21 @@ export class PostgresInvoiceRepository implements InvoiceRepository {
           const rows = await transaction<
             { status: InvoiceStatus; revision: string }[]
           >`
-          SELECT invoices.status, invoices.xmin::text AS revision
+          SELECT invoices.status, invoices.revision AS revision
           FROM invoices
           JOIN organization_memberships AS memberships
             ON memberships.organization_id = invoices.organization_id
           WHERE invoices.id = ${input.invoiceId}
             AND invoices.organization_id = ${input.organizationId}
             AND memberships.user_id = ${input.userId}
-          FOR UPDATE OF invoices FOR SHARE OF memberships
+
         `;
           if (!rows[0]) return { kind: "not_found" };
           if (rows[0].status !== "DRAFT") return { kind: "not_draft" };
           if (rows[0].revision !== revision) {
             return { kind: "reference_unavailable" };
           }
-          await transaction`
+          transaction.queue(transaction`
           INSERT INTO invoice_documents (
             id, organization_id, invoice_id, type, storage_provider, storage_key, sha256, size, etag
           ) VALUES (
@@ -662,8 +669,8 @@ export class PostgresInvoiceRepository implements InvoiceRepository {
             ${preparedDocument.type}, ${preparedDocument.storageProvider}, ${preparedDocument.storageKey},
             ${preparedDocument.sha256}, ${preparedDocument.size}, ${preparedDocument.etag}
           )
-        `;
-          await transaction`
+        `);
+          transaction.queue(transaction`
           UPDATE invoices
           SET number = ${invoice.number}, variable_symbol = ${invoice.variableSymbol},
             supplier_snapshot = ${transaction.json(invoice.supplierSnapshot!)},
@@ -673,17 +680,19 @@ export class PostgresInvoiceRepository implements InvoiceRepository {
           },
             template_version_id = ${templateVersion.id}, status = 'ISSUED',
             issued_at = ${invoice
-            .issuedAt!}, issued_by = ${input.userId}, updated_at = now()
+            .issuedAt!}, issued_by = ${input.userId}, updated_at = CAST(unixepoch('subsec') * 1000 AS INTEGER)
           WHERE id = ${invoice.id} AND organization_id = ${input.organizationId}
-        `;
-          const issued = await this.findInTransaction(
-            transaction,
-            input.organizationId,
-            invoice.id,
-            input.userId,
-          );
-          if (!issued) throw new Error("Issued invoice could not be loaded");
-          return { kind: "issued", invoice: issued };
+        `);
+          return transaction.after(async () => {
+            const issued = await this.findInTransaction(
+              this.sql as TransactionSql,
+              input.organizationId,
+              invoice.id,
+              input.userId,
+            );
+            if (!issued) throw new Error("Issued invoice could not be loaded");
+            return { kind: "issued" as const, invoice: issued };
+          });
         },
       );
       if (result.kind !== "issued") warnOrphan();
@@ -731,7 +740,7 @@ export class PostgresInvoiceRepository implements InvoiceRepository {
             AND (${!activeOnly} OR is_active)
         )
         AND (
-          ${input.bankAccountId}::uuid IS NULL OR EXISTS (
+          ${input.bankAccountId} IS NULL OR EXISTS (
             SELECT 1 FROM bank_accounts
             WHERE id = ${input.bankAccountId}
               AND organization_id = ${input.organizationId}
@@ -742,21 +751,23 @@ export class PostgresInvoiceRepository implements InvoiceRepository {
     return rows[0].allowed;
   }
 
-  private async insertItems(
+  private insertItems(
     sql: TransactionSql,
     invoiceId: string,
     items: NormalizedInvoiceDraftInput["items"],
-  ): Promise<void> {
+  ): void {
     for (const item of items) {
-      await sql`
+      sql.queue(sql`
         INSERT INTO invoice_items (
           id, invoice_id, description, quantity, unit, unit_price, total,
           position
         ) VALUES (
           ${item.id}, ${invoiceId}, ${item.description}, ${item.quantity},
-          ${item.unit}, ${item.unitPrice}, ${item.total}, ${item.position}
+          ${item.unit}, ${money(item.unitPrice)}, ${
+        money(item.total)
+      }, ${item.position}
         )
-      `;
+      `);
     }
   }
 
@@ -779,8 +790,8 @@ export class PostgresInvoiceRepository implements InvoiceRepository {
     );
     if (!rows[0]) return null;
     const itemRows = await sql<ItemRow[]>`
-      SELECT id, invoice_id, description, quantity::text, unit,
-        unit_price::text, total::text, position
+      SELECT id, invoice_id, description, quantity, unit,
+        unit_price, total, position
       FROM invoice_items
       WHERE invoice_id = ${invoiceId}
       ORDER BY position

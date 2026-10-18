@@ -2,8 +2,8 @@ import type { InvoiceRepository } from "@/repositories/invoice_repository.ts";
 import type { InvoiceDocumentRepository } from "@/repositories/invoice_document_repository.ts";
 import { define } from "@/utils.ts";
 import { isUuid } from "@/domain/organizations/types.ts";
-import { PostgresInvoiceDocumentRepository } from "@/repositories/invoice_document_repository.ts";
-import { PostgresInvoiceRepository } from "@/repositories/invoice_repository.ts";
+import { D1InvoiceDocumentRepository } from "@/repositories/invoice_document_repository.ts";
+import { D1InvoiceRepository } from "@/repositories/invoice_repository.ts";
 import {
   getInvoiceDocumentDownloadTarget,
   InvoiceDocumentIntegrityError,
@@ -21,12 +21,11 @@ export function createInvoicePdfHandler(dependencies: {
   storage: typeof getDocumentStorageForProvider;
 } = {
   invoices: {
-    findForUser: (...args) =>
-      new PostgresInvoiceRepository().findForUser(...args),
+    findForUser: (...args) => new D1InvoiceRepository().findForUser(...args),
   },
   documents: {
     findPdfForUser: (...args) =>
-      new PostgresInvoiceDocumentRepository().findPdfForUser(...args),
+      new D1InvoiceDocumentRepository().findPdfForUser(...args),
   },
   storage: getDocumentStorageForProvider,
 }) {

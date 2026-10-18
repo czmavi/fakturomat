@@ -6,7 +6,7 @@ import InvoiceTemplateForm, {
   invoiceTemplateInputFromForm,
 } from "@/components/InvoiceTemplateForm.tsx";
 import type { InvoiceTemplateInput } from "@/domain/invoices/template_types.ts";
-import { PostgresInvoiceTemplateRepository } from "@/repositories/invoice_template_repository.ts";
+import { D1InvoiceTemplateRepository } from "@/repositories/invoice_template_repository.ts";
 import {
   InvoiceTemplateService,
   InvoiceTemplateValidationError,
@@ -33,7 +33,7 @@ export const handler = define.handlers<PageData>({
     }
     try {
       const template = await new InvoiceTemplateService(
-        new PostgresInvoiceTemplateRepository(),
+        new D1InvoiceTemplateRepository(),
       ).create({
         ...values,
         organizationId: ctx.state.currentOrganization!.id,

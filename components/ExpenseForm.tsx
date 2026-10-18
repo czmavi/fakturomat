@@ -18,6 +18,10 @@ export interface ExpenseFormProps extends ExpenseFormOptions {
   organizationId: string;
   error: string | null;
   submitLabel: string;
+  formId?: string;
+  multipart?: boolean;
+  pdfProof?: string;
+  disabled?: boolean;
 }
 
 export function expenseInputFromForm(form: FormData): ExpenseFormInput {
@@ -80,7 +84,15 @@ const inputClass =
 
 export default function ExpenseForm(props: ExpenseFormProps) {
   return (
-    <form method="post" class="mt-7 space-y-7">
+    <form
+      id={props.formId}
+      method="post"
+      encType={props.multipart ? "multipart/form-data" : undefined}
+      class="mt-7 space-y-7"
+    >
+      {props.pdfProof && (
+        <input type="hidden" name="pdf_proof" value={props.pdfProof} />
+      )}
       <input type="hidden" name="csrf_token" value={props.csrfToken} />
       {props.error && (
         <div
@@ -224,6 +236,7 @@ export default function ExpenseForm(props: ExpenseFormProps) {
 
       <button
         type="submit"
+        disabled={props.disabled}
         class="w-full rounded-xl bg-[#183e2a] px-5 py-3 font-semibold text-white hover:bg-[#23583b]"
       >
         {props.submitLabel}

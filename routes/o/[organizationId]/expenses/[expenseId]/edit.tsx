@@ -8,7 +8,7 @@ import ExpenseForm, {
 } from "@/components/ExpenseForm.tsx";
 import type { ExpenseFormInput } from "@/domain/expenses/types.ts";
 import { isUuid } from "@/domain/organizations/types.ts";
-import { PostgresExpenseRepository } from "@/repositories/expense_repository.ts";
+import { D1ExpenseRepository } from "@/repositories/expense_repository.ts";
 import { isValidCsrfToken } from "@/services/csrf_service.ts";
 import { loadExpenseFormOptions } from "@/services/expense_form_options.ts";
 import {
@@ -26,7 +26,7 @@ export const handler = define.handlers<PageData>({
     if (!isUuid(ctx.params.expenseId)) {
       return new Response("Stránka nebyla nalezena.", { status: 404 });
     }
-    const repository = new PostgresExpenseRepository();
+    const repository = new D1ExpenseRepository();
     const expense = await repository.findForUser(
       ctx.params.organizationId,
       ctx.params.expenseId,
@@ -66,7 +66,7 @@ export const handler = define.handlers<PageData>({
       );
     }
     try {
-      const expense = await new ExpenseService(new PostgresExpenseRepository())
+      const expense = await new ExpenseService(new D1ExpenseRepository())
         .update({
           ...values,
           id: ctx.params.expenseId,

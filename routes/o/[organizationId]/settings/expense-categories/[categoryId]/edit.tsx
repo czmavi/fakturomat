@@ -6,7 +6,7 @@ import ExpenseCategoryForm, {
 } from "@/components/ExpenseCategoryForm.tsx";
 import type { ExpenseCategoryInput } from "@/domain/expenses/types.ts";
 import { isUuid } from "@/domain/organizations/types.ts";
-import { PostgresExpenseCategoryRepository } from "@/repositories/expense_category_repository.ts";
+import { D1ExpenseCategoryRepository } from "@/repositories/expense_category_repository.ts";
 import { isValidCsrfToken } from "@/services/csrf_service.ts";
 import {
   ExpenseCategoryService,
@@ -23,7 +23,7 @@ export const handler = define.handlers<PageData>({
     if (!isUuid(ctx.params.categoryId)) {
       return new Response("Stránka nebyla nalezena.", { status: 404 });
     }
-    const category = await new PostgresExpenseCategoryRepository().findForUser(
+    const category = await new D1ExpenseCategoryRepository().findForUser(
       ctx.params.organizationId,
       ctx.params.categoryId,
       ctx.state.user!.id,
@@ -50,7 +50,7 @@ export const handler = define.handlers<PageData>({
     }
     try {
       const category = await new ExpenseCategoryService(
-        new PostgresExpenseCategoryRepository(),
+        new D1ExpenseCategoryRepository(),
       ).update({
         ...values,
         id: ctx.params.categoryId,

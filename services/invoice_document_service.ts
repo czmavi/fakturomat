@@ -1,3 +1,4 @@
+import { StorageObjectNotFound } from "@/services/storage/r2_storage.ts";
 import type {
   InvoiceDocument,
   InvoiceDocumentPreparer,
@@ -74,7 +75,10 @@ export async function getInvoiceDocumentDownloadTarget(
       disposition,
     });
   } catch (error) {
-    if (error instanceof Deno.errors.NotFound) {
+    if (
+      error instanceof StorageObjectNotFound ||
+      (typeof Deno !== "undefined" && error instanceof Deno.errors.NotFound)
+    ) {
       throw new InvoiceDocumentIntegrityError(
         "Soubor PDF chybí v objektovém úložišti.",
       );

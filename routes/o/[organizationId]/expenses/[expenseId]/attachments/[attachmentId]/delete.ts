@@ -1,6 +1,6 @@
 import { define } from "@/utils.ts";
 import { isUuid } from "@/domain/organizations/types.ts";
-import { PostgresExpenseAttachmentRepository } from "@/repositories/expense_attachment_repository.ts";
+import { D1ExpenseAttachmentRepository } from "@/repositories/expense_attachment_repository.ts";
 import { isValidCsrfToken } from "@/services/csrf_service.ts";
 import { ExpenseAttachmentService } from "@/services/expense_attachment_service.ts";
 import { getObjectStorage } from "@/services/storage/storage_factory.ts";
@@ -17,7 +17,7 @@ export const handler = define.handlers({
       return new Response("Platnost formuláře vypršela.", { status: 403 });
     }
     const removed = await new ExpenseAttachmentService(
-      new PostgresExpenseAttachmentRepository(),
+      new D1ExpenseAttachmentRepository(),
       getObjectStorage(),
     ).remove({
       organizationId: ctx.params.organizationId,

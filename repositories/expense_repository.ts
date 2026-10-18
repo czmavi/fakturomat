@@ -1,4 +1,6 @@
-import type { Sql, TransactionSql } from "postgres";
+import { money } from "@/database/d1.ts";
+import type { ExpenseAttachment } from "@/domain/expenses/attachment.ts";
+import type { Sql, TransactionSql } from "@/database/d1.ts";
 import { getDb } from "@/database/client.ts";
 import type {
   Expense,
@@ -99,6 +101,7 @@ export interface ExpenseRepository {
   ): Promise<Expense | null>;
   createForUser(
     input: NormalizedExpenseInput & {
+      attachment?: Omit<ExpenseAttachment, "createdAt">;
       id: string;
       organizationId: string;
       userId: string;
@@ -120,19 +123,19 @@ const SELECT_COLUMNS = `
   expenses.issue_date, expenses.taxable_supply_date, expenses.due_date,
   expenses.payment_date, expenses.description, expenses.category_id,
   categories.name AS category_name, expenses.currency,
-  expenses.total_amount::text,
+  expenses.total_amount,
   COALESCE((
-    SELECT SUM(lines.base_amount)::text
+    SELECT SUM(lines.base_amount)
     FROM expense_vat_lines AS lines
     WHERE lines.organization_id = expenses.organization_id
       AND lines.expense_id = expenses.id
-  ), '0.00') AS vat_base_total,
+  ), 0) AS vat_base_total,
   COALESCE((
-    SELECT SUM(lines.vat_amount)::text
+    SELECT SUM(lines.vat_amount)
     FROM expense_vat_lines AS lines
     WHERE lines.organization_id = expenses.organization_id
       AND lines.expense_id = expenses.id
-  ), '0.00') AS vat_amount_total,
+  ), 0) AS vat_amount_total,
   expenses.note, expenses.created_at, expenses.updated_at
 `;
 
@@ -154,7 +157,7 @@ function escapeLike(value: string): string {
   );
 }
 
-export class PostgresExpenseRepository implements ExpenseRepository {
+export class D1ExpenseRepository implements ExpenseRepository {
   constructor(private readonly sql: Sql = getDb()) {}
 
   async listForUser(input: {
@@ -173,13 +176,13 @@ export class PostgresExpenseRepository implements ExpenseRepository {
       ${JOINS}
       WHERE expenses.organization_id = $1
         AND memberships.user_id = $2
-        AND ($3::uuid IS NULL OR expenses.category_id = $3)
-        AND ($4::text IS NULL OR expenses.document_type = $4)
+        AND ($3 IS NULL OR expenses.category_id = $3)
+        AND ($4 IS NULL OR expenses.document_type = $4)
         AND (
           $5 = ''
-          OR expenses.supplier_name ILIKE $6 ESCAPE '\\'
-          OR expenses.description ILIKE $6 ESCAPE '\\'
-          OR COALESCE(expenses.supplier_invoice_number, '') ILIKE $6 ESCAPE '\\'
+          OR expenses.supplier_name LIKE $6 ESCAPE '\\'
+          OR expenses.description LIKE $6 ESCAPE '\\'
+          OR COALESCE(expenses.supplier_invoice_number, '') LIKE $6 ESCAPE '\\'
         )
       ORDER BY expenses.issue_date DESC NULLS LAST,
         expenses.created_at DESC, expenses.id
@@ -223,6 +226,7 @@ export class PostgresExpenseRepository implements ExpenseRepository {
 
   async createForUser(
     input: NormalizedExpenseInput & {
+      attachment?: Omit<ExpenseAttachment, "createdAt">;
       id: string;
       organizationId: string;
       userId: string;
@@ -230,7 +234,7 @@ export class PostgresExpenseRepository implements ExpenseRepository {
   ): Promise<Expense | null> {
     return await this.sql.begin(async (transaction) => {
       if (!await this.referencesAreAvailable(transaction, input)) return null;
-      await transaction`
+      transaction.queue(transaction`
         INSERT INTO expenses (
           id, organization_id, contact_id, document_type, supplier_name,
           supplier_invoice_number, issue_date, taxable_supply_date, due_date,
@@ -241,11 +245,21 @@ export class PostgresExpenseRepository implements ExpenseRepository {
           ${input.supplierInvoiceNumber}, ${input.issueDate},
           ${input.taxableSupplyDate}, ${input.dueDate}, ${input.paymentDate},
           ${input.description}, ${input.categoryId}, ${input.currency},
-          ${input.totalAmount}, ${input.note}
+          ${money(input.totalAmount)}, ${input.note}
         )
-      `;
+      `);
+      if (input.attachment) {
+        const attachment = input.attachment;
+        transaction.queue(transaction`
+          INSERT INTO attachments (id, organization_id, expense_id, filename, mime_type, size, storage_key, sha256)
+          VALUES (${attachment.id}, ${input.organizationId}, ${input.id}, ${attachment.filename},
+            ${attachment.mimeType}, ${attachment.size}, ${attachment.storageKey}, ${attachment.sha256})
+        `);
+      }
       await this.insertVatLines(transaction, input);
-      return await this.findInTransaction(transaction, input);
+      return transaction.after(() =>
+        this.findInTransaction(this.sql as TransactionSql, input)
+      );
     });
   }
 
@@ -265,11 +279,11 @@ export class PostgresExpenseRepository implements ExpenseRepository {
         WHERE expenses.id = ${input.id}
           AND expenses.organization_id = ${input.organizationId}
           AND memberships.user_id = ${input.userId}
-        FOR UPDATE OF expenses
+
       `;
       if (!current[0]) return null;
       if (!await this.referencesAreAvailable(transaction, input)) return null;
-      await transaction`
+      transaction.queue(transaction`
         UPDATE expenses
         SET contact_id = ${input.contactId}, document_type = ${input.documentType},
           supplier_name = ${input.supplierName},
@@ -278,17 +292,21 @@ export class PostgresExpenseRepository implements ExpenseRepository {
           taxable_supply_date = ${input.taxableSupplyDate},
           due_date = ${input.dueDate}, payment_date = ${input.paymentDate},
           description = ${input.description}, category_id = ${input.categoryId},
-          currency = ${input.currency}, total_amount = ${input.totalAmount},
-          note = ${input.note}, updated_at = now()
+          currency = ${input.currency}, total_amount = ${
+        money(input.totalAmount)
+      },
+          note = ${input.note}, updated_at = CAST(unixepoch('subsec') * 1000 AS INTEGER)
         WHERE id = ${input.id} AND organization_id = ${input.organizationId}
-      `;
-      await transaction`
+      `);
+      transaction.queue(transaction`
         DELETE FROM expense_vat_lines
         WHERE organization_id = ${input.organizationId}
           AND expense_id = ${input.id}
-      `;
+      `);
       await this.insertVatLines(transaction, input);
-      return await this.findInTransaction(transaction, input);
+      return transaction.after(() =>
+        this.findInTransaction(this.sql as TransactionSql, input)
+      );
     });
   }
 
@@ -307,14 +325,14 @@ export class PostgresExpenseRepository implements ExpenseRepository {
             AND user_id = ${input.userId}
         )
         AND (
-          ${input.contactId}::uuid IS NULL OR EXISTS (
+          ${input.contactId} IS NULL OR EXISTS (
             SELECT 1 FROM contacts
             WHERE id = ${input.contactId}
               AND organization_id = ${input.organizationId}
           )
         )
         AND (
-          ${input.categoryId}::uuid IS NULL OR EXISTS (
+          ${input.categoryId} IS NULL OR EXISTS (
             SELECT 1 FROM expense_categories
             WHERE id = ${input.categoryId}
               AND organization_id = ${input.organizationId}
@@ -324,20 +342,20 @@ export class PostgresExpenseRepository implements ExpenseRepository {
     return rows[0]?.allowed ?? false;
   }
 
-  private async insertVatLines(
+  private insertVatLines(
     sql: TransactionSql,
     input: NormalizedExpenseInput & { id: string; organizationId: string },
-  ): Promise<void> {
+  ): void {
     for (const line of input.vatLines) {
-      await sql`
+      sql.queue(sql`
         INSERT INTO expense_vat_lines (
           id, organization_id, expense_id, position, vat_rate,
           base_amount, vat_amount
         ) VALUES (
           ${line.id}, ${input.organizationId}, ${input.id}, ${line.position},
-          ${line.vatRate}, ${line.baseAmount}, ${line.vatAmount}
+          ${line.vatRate}, ${money(line.baseAmount)}, ${money(line.vatAmount)}
         )
-      `;
+      `);
     }
   }
 
@@ -347,8 +365,8 @@ export class PostgresExpenseRepository implements ExpenseRepository {
     expenseId: string,
   ): Promise<ExpenseVatLine[]> {
     const rows = await sql<ExpenseVatLineRow[]>`
-      SELECT id, expense_id, position, vat_rate::text,
-        base_amount::text, vat_amount::text
+      SELECT id, expense_id, position, vat_rate,
+        base_amount, vat_amount
       FROM expense_vat_lines
       WHERE organization_id = ${organizationId} AND expense_id = ${expenseId}
       ORDER BY position

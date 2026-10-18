@@ -1,6 +1,6 @@
 import { define } from "@/utils.ts";
 import { isUuid } from "@/domain/organizations/types.ts";
-import { PostgresOrganizationRepository } from "@/repositories/organization_repository.ts";
+import { D1OrganizationRepository } from "@/repositories/organization_repository.ts";
 
 export default define.middleware(async (ctx) => {
   const user = ctx.state.user;
@@ -11,7 +11,7 @@ export default define.middleware(async (ctx) => {
     return new Response("Stránka nebyla nalezena.", { status: 404 });
   }
 
-  const repository = new PostgresOrganizationRepository();
+  const repository = new D1OrganizationRepository();
   const [organization, organizations] = await Promise.all([
     repository.findForUser(organizationId, user.id),
     repository.listForUser(user.id),

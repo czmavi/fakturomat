@@ -1,6 +1,6 @@
 import { define } from "@/utils.ts";
 import { isUuid } from "@/domain/organizations/types.ts";
-import { PostgresInvoiceRepository } from "@/repositories/invoice_repository.ts";
+import { D1InvoiceRepository } from "@/repositories/invoice_repository.ts";
 import { isValidCsrfToken } from "@/services/csrf_service.ts";
 import { InvoiceService } from "@/services/invoice_service.ts";
 import { InvoiceDocumentService } from "@/services/invoice_document_service.ts";
@@ -23,7 +23,7 @@ export const handler = define.handlers({
       return new Response("Platnost formuláře vypršela.", { status: 403 });
     }
     const result = await new InvoiceService(
-      new PostgresInvoiceRepository(),
+      new D1InvoiceRepository(),
       new InvoiceDocumentService(
         new PdfLibRenderer(),
         await getDocumentStorage(),

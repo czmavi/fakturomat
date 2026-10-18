@@ -1,8 +1,8 @@
 import type { InvoiceFormOptions } from "@/components/InvoiceForm.tsx";
-import { PostgresBankAccountRepository } from "@/repositories/bank_account_repository.ts";
-import { PostgresContactRepository } from "@/repositories/contact_repository.ts";
-import { PostgresInvoiceNumberSequenceRepository } from "@/repositories/invoice_number_sequence_repository.ts";
-import { PostgresInvoiceTemplateRepository } from "@/repositories/invoice_template_repository.ts";
+import { D1BankAccountRepository } from "@/repositories/bank_account_repository.ts";
+import { D1ContactRepository } from "@/repositories/contact_repository.ts";
+import { D1InvoiceNumberSequenceRepository } from "@/repositories/invoice_number_sequence_repository.ts";
+import { D1InvoiceTemplateRepository } from "@/repositories/invoice_template_repository.ts";
 
 interface CurrentSelections {
   contactId?: string;
@@ -18,18 +18,18 @@ export async function loadInvoiceFormOptions(
 ): Promise<InvoiceFormOptions> {
   const [contacts, numberSequences, bankAccounts, templates] = await Promise
     .all([
-      new PostgresContactRepository().listForUser({
+      new D1ContactRepository().listForUser({
         organizationId,
         userId,
         search: "",
         includeArchived: true,
       }),
-      new PostgresInvoiceNumberSequenceRepository().listForUser(
+      new D1InvoiceNumberSequenceRepository().listForUser(
         organizationId,
         userId,
       ),
-      new PostgresBankAccountRepository().listForUser(organizationId, userId),
-      new PostgresInvoiceTemplateRepository().listForUser({
+      new D1BankAccountRepository().listForUser(organizationId, userId),
+      new D1InvoiceTemplateRepository().listForUser({
         organizationId,
         userId,
       }),

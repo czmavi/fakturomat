@@ -1,4 +1,4 @@
-import type { Sql } from "postgres";
+import type { Sql } from "@/database/d1.ts";
 import { getDb } from "@/database/client.ts";
 import type { OrganizationSettings } from "@/domain/organizations/settings.ts";
 import type { OrganizationType } from "@/domain/organizations/types.ts";
@@ -73,7 +73,7 @@ const SETTINGS_COLUMNS = `
   organizations.custom_note
 `;
 
-export class PostgresOrganizationSettingsRepository
+export class D1OrganizationSettingsRepository
   implements OrganizationSettingsRepository {
   constructor(private readonly sql: Sql = getDb()) {}
 
@@ -121,7 +121,7 @@ export class PostgresOrganizationSettingsRepository
         default_invoice_template_id = ${input.defaultInvoiceTemplateId},
         invoice_footer = ${input.invoiceFooter},
         custom_note = ${input.customNote},
-        updated_at = now()
+        updated_at = CAST(unixepoch('subsec') * 1000 AS INTEGER)
       WHERE organizations.id = ${input.id}
         AND EXISTS (
           SELECT 1 FROM organization_memberships

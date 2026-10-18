@@ -1,19 +1,19 @@
 import type { ExpenseFormOptions } from "@/components/ExpenseForm.tsx";
-import { PostgresContactRepository } from "@/repositories/contact_repository.ts";
-import { PostgresExpenseCategoryRepository } from "@/repositories/expense_category_repository.ts";
+import { D1ContactRepository } from "@/repositories/contact_repository.ts";
+import { D1ExpenseCategoryRepository } from "@/repositories/expense_category_repository.ts";
 
 export async function loadExpenseFormOptions(
   organizationId: string,
   userId: string,
 ): Promise<ExpenseFormOptions> {
   const [contacts, categories] = await Promise.all([
-    new PostgresContactRepository().listForUser({
+    new D1ContactRepository().listForUser({
       organizationId,
       userId,
       search: "",
       includeArchived: true,
     }),
-    new PostgresExpenseCategoryRepository().listForUser(
+    new D1ExpenseCategoryRepository().listForUser(
       organizationId,
       userId,
       true,

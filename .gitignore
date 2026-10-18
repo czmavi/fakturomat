@@ -15,3 +15,12 @@ vendor/
 
 # Local object storage
 data/storage/
+
+# Local Cloudflare state, secrets and migration exports
+.wrangler/
+.dev.vars
+.dev.vars.*
+!.dev.vars.example
+*.import.sql
+
+.vite/

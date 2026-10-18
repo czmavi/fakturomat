@@ -5,8 +5,8 @@ import BankConnectionForm from "@/components/BankConnectionForm.tsx";
 import type { BankAccount, BankConnection } from "@/domain/banking/types.ts";
 import { bankConnectionStatusLabel } from "@/domain/banking/types.ts";
 import { isUuid } from "@/domain/organizations/types.ts";
-import { PostgresBankAccountRepository } from "@/repositories/bank_account_repository.ts";
-import { PostgresBankConnectionRepository } from "@/repositories/bank_connection_repository.ts";
+import { D1BankAccountRepository } from "@/repositories/bank_account_repository.ts";
+import { D1BankConnectionRepository } from "@/repositories/bank_connection_repository.ts";
 import {
   BankConnectionValidationError,
   createBankConnectionService,
@@ -28,12 +28,12 @@ async function loadPageData(
   saved = false,
 ): Promise<PageData | null> {
   const [account, connection] = await Promise.all([
-    new PostgresBankAccountRepository().findForUser(
+    new D1BankAccountRepository().findForUser(
       organizationId,
       bankAccountId,
       userId,
     ),
-    new PostgresBankConnectionRepository().findForUser(
+    new D1BankConnectionRepository().findForUser(
       organizationId,
       bankAccountId,
       userId,
@@ -82,7 +82,7 @@ export const handler = define.handlers<PageData>({
         403,
       );
     }
-    const repository = new PostgresBankConnectionRepository();
+    const repository = new D1BankConnectionRepository();
     if (form.get("intent") === "disconnect") {
       if (
         !await repository.deleteForUser(

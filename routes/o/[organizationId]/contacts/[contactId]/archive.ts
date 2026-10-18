@@ -1,6 +1,6 @@
 import { define } from "@/utils.ts";
 import { isUuid } from "@/domain/organizations/types.ts";
-import { PostgresContactRepository } from "@/repositories/contact_repository.ts";
+import { D1ContactRepository } from "@/repositories/contact_repository.ts";
 import { isValidCsrfToken } from "@/services/csrf_service.ts";
 
 export const handler = define.handlers({
@@ -12,7 +12,7 @@ export const handler = define.handlers({
     if (!isValidCsrfToken(ctx.state.csrfToken, form.get("csrf_token"))) {
       return new Response("Forbidden", { status: 403 });
     }
-    const archived = await new PostgresContactRepository().archiveForUser(
+    const archived = await new D1ContactRepository().archiveForUser(
       ctx.params.organizationId,
       ctx.params.contactId,
       ctx.state.user!.id,

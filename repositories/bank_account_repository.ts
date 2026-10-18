@@ -1,4 +1,4 @@
-import type { Sql } from "postgres";
+import type { Sql } from "@/database/d1.ts";
 import { getDb } from "@/database/client.ts";
 import type {
   BankAccount,
@@ -65,7 +65,7 @@ const RETURNING_COLUMNS = `
   bank_code, iban, bic, currency, is_default, is_active
 `;
 
-export class PostgresBankAccountRepository implements BankAccountRepository {
+export class D1BankAccountRepository implements BankAccountRepository {
   constructor(private readonly sql: Sql = getDb()) {}
 
   async listForUser(
@@ -128,25 +128,25 @@ export class PostgresBankAccountRepository implements BankAccountRepository {
           ON organization_memberships.organization_id = organizations.id
         WHERE organizations.id = ${input.organizationId}
           AND organization_memberships.user_id = ${input.userId}
-        FOR UPDATE OF organizations
+
       `;
       if (!access[0]) return null;
 
       const activeAccounts = await transaction<{ count: number }[]>`
-        SELECT count(*)::integer AS count
+        SELECT count(*) AS count
         FROM bank_accounts
         WHERE organization_id = ${input.organizationId} AND is_active
       `;
       const isDefault = input.isDefault ||
         (input.isActive && activeAccounts[0].count === 0);
       if (isDefault) {
-        await transaction`
-          UPDATE bank_accounts SET is_default = false, updated_at = now()
+        transaction.queue(transaction`
+          UPDATE bank_accounts SET is_default = false, updated_at = CAST(unixepoch('subsec') * 1000 AS INTEGER)
           WHERE organization_id = ${input.organizationId} AND is_default
-        `;
+        `);
       }
 
-      const rows = await transaction.unsafe<BankAccountRow[]>(
+      const rows = transaction.queue(transaction.unsafe<BankAccountRow[]>(
         `
         INSERT INTO bank_accounts (
           id, organization_id, name, bank_name, account_prefix, account_number,
@@ -168,8 +168,8 @@ export class PostgresBankAccountRepository implements BankAccountRepository {
           isDefault,
           input.isActive,
         ],
-      );
-      return fromRow(rows[0]);
+      ));
+      return transaction.after(() => fromRow(rows.value[0]));
     });
   }
 
@@ -188,32 +188,32 @@ export class PostgresBankAccountRepository implements BankAccountRepository {
           ON organization_memberships.organization_id = organizations.id
         WHERE organizations.id = ${input.organizationId}
           AND organization_memberships.user_id = ${input.userId}
-        FOR UPDATE OF organizations
+
       `;
       if (!access[0]) return null;
 
       const current = await transaction<{ is_default: boolean }[]>`
         SELECT is_default FROM bank_accounts
         WHERE id = ${input.id} AND organization_id = ${input.organizationId}
-        FOR UPDATE
+
       `;
       if (!current[0]) return null;
 
       if (input.isDefault) {
-        await transaction`
-          UPDATE bank_accounts SET is_default = false, updated_at = now()
+        transaction.queue(transaction`
+          UPDATE bank_accounts SET is_default = false, updated_at = CAST(unixepoch('subsec') * 1000 AS INTEGER)
           WHERE organization_id = ${input.organizationId}
             AND id <> ${input.id}
             AND is_default
-        `;
+        `);
       }
 
-      const rows = await transaction.unsafe<BankAccountRow[]>(
+      transaction.queue(transaction.unsafe<BankAccountRow[]>(
         `
         UPDATE bank_accounts
         SET name = $1, bank_name = $2, account_prefix = $3,
           account_number = $4, bank_code = $5, iban = $6, bic = $7,
-          currency = $8, is_default = $9, is_active = $10, updated_at = now()
+          currency = $8, is_default = $9, is_active = $10, updated_at = CAST(unixepoch('subsec') * 1000 AS INTEGER)
         WHERE id = $11 AND organization_id = $12
         RETURNING ${RETURNING_COLUMNS}
       `,
@@ -231,13 +231,11 @@ export class PostgresBankAccountRepository implements BankAccountRepository {
           input.id,
           input.organizationId,
         ],
-      );
-      if (!rows[0]) return null;
-
+      ));
       if (current[0].is_default && !input.isDefault) {
-        const promoted = await transaction<{ id: string }[]>`
+        transaction.queue(transaction<{ id: string }[]>`
           UPDATE bank_accounts
-          SET is_default = true, updated_at = now()
+          SET is_default = true, updated_at = CAST(unixepoch('subsec') * 1000 AS INTEGER)
           WHERE id = (
             SELECT id FROM bank_accounts
             WHERE organization_id = ${input.organizationId}
@@ -247,22 +245,23 @@ export class PostgresBankAccountRepository implements BankAccountRepository {
             LIMIT 1
           )
           RETURNING id
-        `;
-        if (!promoted[0] && input.isActive) {
-          await transaction`
-            UPDATE bank_accounts SET is_default = true, updated_at = now()
+        `);
+        if (input.isActive) {
+          transaction.queue(transaction`
+            UPDATE bank_accounts SET is_default = true, updated_at = CAST(unixepoch('subsec') * 1000 AS INTEGER)
             WHERE id = ${input.id} AND organization_id = ${input.organizationId}
-          `;
+              AND NOT EXISTS (SELECT 1 FROM bank_accounts WHERE organization_id = ${input.organizationId} AND is_default)
+          `);
         }
       }
 
-      const finalRows = await transaction<BankAccountRow[]>`
+      const finalRows = transaction.queue(transaction<BankAccountRow[]>`
         SELECT id, organization_id, name, bank_name, account_prefix,
           account_number, bank_code, iban, bic, currency, is_default, is_active
         FROM bank_accounts
         WHERE id = ${input.id} AND organization_id = ${input.organizationId}
-      `;
-      return fromRow(finalRows[0]);
+      `);
+      return transaction.after(() => fromRow(finalRows.value[0]));
     });
   }
 }

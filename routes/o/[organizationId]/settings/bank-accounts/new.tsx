@@ -6,8 +6,8 @@ import BankAccountForm, {
   EMPTY_BANK_ACCOUNT,
 } from "@/components/BankAccountForm.tsx";
 import type { BankAccountInput } from "@/domain/banking/types.ts";
-import { PostgresBankAccountRepository } from "@/repositories/bank_account_repository.ts";
-import { PostgresOrganizationSettingsRepository } from "@/repositories/organization_settings_repository.ts";
+import { D1BankAccountRepository } from "@/repositories/bank_account_repository.ts";
+import { D1OrganizationSettingsRepository } from "@/repositories/organization_settings_repository.ts";
 import {
   BankAccountService,
   BankAccountValidationError,
@@ -21,7 +21,7 @@ interface PageData {
 
 export const handler = define.handlers<PageData>({
   async GET(ctx) {
-    const settings = await new PostgresOrganizationSettingsRepository()
+    const settings = await new D1OrganizationSettingsRepository()
       .findForUser(
         ctx.params.organizationId,
         ctx.state.user!.id,
@@ -45,7 +45,7 @@ export const handler = define.handlers<PageData>({
     }
     try {
       const account = await new BankAccountService(
-        new PostgresBankAccountRepository(),
+        new D1BankAccountRepository(),
       ).create({
         ...values,
         organizationId: ctx.params.organizationId,

@@ -1,6 +1,6 @@
 import { define } from "@/utils.ts";
 import { isUuid } from "@/domain/organizations/types.ts";
-import { PostgresInvoiceTemplateRepository } from "@/repositories/invoice_template_repository.ts";
+import { D1InvoiceTemplateRepository } from "@/repositories/invoice_template_repository.ts";
 import { createPreviewInvoiceViewModel } from "@/services/invoice_template_preview.ts";
 import { PdfLibRenderer } from "@/services/pdf/pdf_lib_renderer.ts";
 
@@ -9,7 +9,7 @@ export const handler = define.handlers({
     if (!isUuid(ctx.params.templateId) || !isUuid(ctx.params.versionId)) {
       return new Response("Stránka nebyla nalezena.", { status: 404 });
     }
-    const version = await new PostgresInvoiceTemplateRepository()
+    const version = await new D1InvoiceTemplateRepository()
       .findVersionForUser(
         ctx.params.templateId,
         ctx.params.versionId,

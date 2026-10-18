@@ -1,6 +1,6 @@
 import { define } from "@/utils.ts";
 import { isUuid } from "@/domain/organizations/types.ts";
-import { PostgresExpenseAttachmentRepository } from "@/repositories/expense_attachment_repository.ts";
+import { D1ExpenseAttachmentRepository } from "@/repositories/expense_attachment_repository.ts";
 import {
   attachmentContentDisposition,
   ExpenseAttachmentIntegrityError,
@@ -15,7 +15,7 @@ export const handler = define.handlers({
     ) {
       return new Response("Příloha nebyla nalezena.", { status: 404 });
     }
-    const attachment = await new PostgresExpenseAttachmentRepository()
+    const attachment = await new D1ExpenseAttachmentRepository()
       .findForUser(
         ctx.params.organizationId,
         ctx.params.expenseId,

@@ -1,4 +1,4 @@
-export type StorageProvider = "local" | "s3";
+export type StorageProvider = "local" | "s3" | "r2";
 
 export interface StoredDocument {
   storageProvider: StorageProvider;

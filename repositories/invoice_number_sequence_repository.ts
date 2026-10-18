@@ -1,4 +1,4 @@
-import type { Sql, TransactionSql } from "postgres";
+import type { Sql, TransactionSql } from "@/database/d1.ts";
 import { getDb } from "@/database/client.ts";
 import {
   formatInvoiceNumber,
@@ -80,19 +80,26 @@ export async function allocateNextInvoiceNumber(
   sequence: InvoiceNumberSequence,
   year: number,
 ): Promise<string> {
-  const counters = await sql<{ last_value: string }[]>`
+  const previous = await sql<
+    { last_value: string }[]
+  >`SELECT last_value FROM invoice_number_counters WHERE invoice_number_sequence_id = ${sequence.id} AND year = ${year}`;
+  const next = BigInt(previous[0]?.last_value ?? "0") + 1n;
+  if (next > BigInt(Number.MAX_SAFE_INTEGER)) {
+    throw new Error("Invoice counter exhausted");
+  }
+  sql.queue(sql<{ last_value: string }[]>`
     INSERT INTO invoice_number_counters (
       invoice_number_sequence_id, year, last_value
     ) VALUES (${sequence.id}, ${year}, 1)
     ON CONFLICT (invoice_number_sequence_id, year)
     DO UPDATE SET last_value = invoice_number_counters.last_value + 1,
-      updated_at = now()
-    RETURNING last_value::text
-  `;
-  return formatInvoiceNumber(sequence, year, BigInt(counters[0].last_value));
+      updated_at = CAST(unixepoch('subsec') * 1000 AS INTEGER)
+    RETURNING last_value
+  `);
+  return formatInvoiceNumber(sequence, year, next);
 }
 
-export class PostgresInvoiceNumberSequenceRepository
+export class D1InvoiceNumberSequenceRepository
   implements InvoiceNumberSequenceRepository {
   constructor(private readonly sql: Sql = getDb()) {}
 
@@ -146,26 +153,26 @@ export class PostgresInvoiceNumberSequenceRepository
           ON organization_memberships.organization_id = organizations.id
         WHERE organizations.id = ${input.organizationId}
           AND organization_memberships.user_id = ${input.userId}
-        FOR UPDATE OF organizations
+
       `;
       if (!access[0]) return null;
 
       const count = await transaction<{ count: number }[]>`
-        SELECT count(*)::integer AS count
+        SELECT count(*) AS count
         FROM invoice_number_sequences
         WHERE organization_id = ${input.organizationId} AND is_active
       `;
       const isDefault = input.isDefault ||
         (input.isActive && count[0].count === 0);
       if (isDefault) {
-        await transaction`
+        transaction.queue(transaction`
           UPDATE invoice_number_sequences
-          SET is_default = false, updated_at = now()
+          SET is_default = false, updated_at = CAST(unixepoch('subsec') * 1000 AS INTEGER)
           WHERE organization_id = ${input.organizationId} AND is_default
-        `;
+        `);
       }
 
-      const rows = await transaction.unsafe<SequenceRow[]>(
+      const rows = transaction.queue(transaction.unsafe<SequenceRow[]>(
         `
         INSERT INTO invoice_number_sequences (
           id, organization_id, name, prefix, padding, is_default, is_active
@@ -181,8 +188,8 @@ export class PostgresInvoiceNumberSequenceRepository
           isDefault,
           input.isActive,
         ],
-      );
-      return fromRow(rows[0]);
+      ));
+      return transaction.after(() => fromRow(rows.value[0]));
     });
   }
 
@@ -201,7 +208,7 @@ export class PostgresInvoiceNumberSequenceRepository
           ON organization_memberships.organization_id = organizations.id
         WHERE organizations.id = ${input.organizationId}
           AND organization_memberships.user_id = ${input.userId}
-        FOR UPDATE OF organizations
+
       `;
       if (!access[0]) return null;
 
@@ -210,24 +217,24 @@ export class PostgresInvoiceNumberSequenceRepository
         FROM invoice_number_sequences AS sequences
         WHERE sequences.id = ${input.id}
           AND sequences.organization_id = ${input.organizationId}
-        FOR UPDATE OF sequences
+
       `;
       if (!current[0]) return null;
 
       if (input.isDefault) {
-        await transaction`
+        transaction.queue(transaction`
           UPDATE invoice_number_sequences
-          SET is_default = false, updated_at = now()
+          SET is_default = false, updated_at = CAST(unixepoch('subsec') * 1000 AS INTEGER)
           WHERE organization_id = ${input.organizationId}
             AND id <> ${input.id} AND is_default
-        `;
+        `);
       }
 
-      await transaction.unsafe<SequenceRow[]>(
+      transaction.queue(transaction.unsafe<SequenceRow[]>(
         `
         UPDATE invoice_number_sequences
         SET name = $1, prefix = $2, padding = $3, is_default = $4,
-          is_active = $5, updated_at = now()
+          is_active = $5, updated_at = CAST(unixepoch('subsec') * 1000 AS INTEGER)
         WHERE id = $6 AND organization_id = $7
         RETURNING ${RETURNING_COLUMNS}
       `,
@@ -240,12 +247,12 @@ export class PostgresInvoiceNumberSequenceRepository
           input.id,
           input.organizationId,
         ],
-      );
+      ));
 
       if (current[0].is_default && !input.isDefault) {
-        const promoted = await transaction<{ id: string }[]>`
+        transaction.queue(transaction<{ id: string }[]>`
           UPDATE invoice_number_sequences
-          SET is_default = true, updated_at = now()
+          SET is_default = true, updated_at = CAST(unixepoch('subsec') * 1000 AS INTEGER)
           WHERE id = (
             SELECT id FROM invoice_number_sequences
             WHERE organization_id = ${input.organizationId}
@@ -253,23 +260,24 @@ export class PostgresInvoiceNumberSequenceRepository
             ORDER BY created_at, id LIMIT 1
           )
           RETURNING id
-        `;
-        if (!promoted[0] && input.isActive) {
-          await transaction`
+        `);
+        if (input.isActive) {
+          transaction.queue(transaction`
             UPDATE invoice_number_sequences
-            SET is_default = true, updated_at = now()
+            SET is_default = true, updated_at = CAST(unixepoch('subsec') * 1000 AS INTEGER)
             WHERE id = ${input.id} AND organization_id = ${input.organizationId}
-          `;
+              AND NOT EXISTS (SELECT 1 FROM invoice_number_sequences WHERE organization_id = ${input.organizationId} AND is_default)
+          `);
         }
       }
 
-      const finalRows = await transaction<SequenceRow[]>`
+      const finalRows = transaction.queue(transaction<SequenceRow[]>`
         SELECT ${transaction.unsafe(SELECT_COLUMNS)}
         FROM invoice_number_sequences AS sequences
         WHERE sequences.id = ${input.id}
           AND sequences.organization_id = ${input.organizationId}
-      `;
-      return fromRow(finalRows[0]);
+      `);
+      return transaction.after(() => fromRow(finalRows.value[0]));
     });
   }
 

@@ -2,7 +2,7 @@ import { page } from "fresh";
 import { Head } from "fresh/runtime";
 import { define } from "@/utils.ts";
 import type { InvoiceTemplate } from "@/domain/invoices/template_types.ts";
-import { PostgresInvoiceTemplateRepository } from "@/repositories/invoice_template_repository.ts";
+import { D1InvoiceTemplateRepository } from "@/repositories/invoice_template_repository.ts";
 
 export const handler = define.handlers<{ templates: InvoiceTemplate[] }>({
   async GET(ctx) {
@@ -11,7 +11,7 @@ export const handler = define.handlers<{ templates: InvoiceTemplate[] }>({
       userId: ctx.state.user!.id,
     };
     return page({
-      templates: await new PostgresInvoiceTemplateRepository().listForUser(
+      templates: await new D1InvoiceTemplateRepository().listForUser(
         scope,
       ),
     });

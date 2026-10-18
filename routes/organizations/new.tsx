@@ -1,7 +1,7 @@
 import { page } from "fresh";
 import { Head } from "fresh/runtime";
 import { define } from "@/utils.ts";
-import { PostgresOrganizationRepository } from "@/repositories/organization_repository.ts";
+import { D1OrganizationRepository } from "@/repositories/organization_repository.ts";
 import {
   OrganizationService,
   OrganizationValidationError,
@@ -44,7 +44,7 @@ export const handler = define.handlers<OrganizationFormData>({
 
     try {
       const service = new OrganizationService(
-        new PostgresOrganizationRepository(),
+        new D1OrganizationRepository(),
       );
       const organization = await service.create({
         ...values,

@@ -1,15 +1,16 @@
 # Bezpečnostní model
 
-Tento dokument shrnuje audit po etapě 18. Fakturomat je interní více-tenantová
-aplikace; není určený k veřejné registraci ani jako účetní systém.
+Tento dokument popisuje bezpečnostní model po převodu na Workers, D1 a R2.
+Fakturomat je interní více-tenantová aplikace; není určený k veřejné registraci
+ani jako účetní systém.
 
 ## Hranice důvěry
 
 - Uživatel, session a membership jsou jediným zdrojem aplikační autorizace.
 - Každý business objekt se načítá a mění současně podle `organization_id` a
   oprávnění aktuálního uživatele.
-- PostgreSQL, aplikační proces, šifrovací klíč a object storage musí běžet v
-  důvěryhodné infrastruktuře s omezeným administrátorským přístupem.
+- D1, Worker, šifrovací klíč a R2 musí běžet v důvěryhodné infrastruktuře s
+  omezeným administrátorským přístupem.
 - Fio integrace je read-only. Aplikace neobsahuje odesílání platebních příkazů.
 
 ## Implementované kontroly
@@ -63,32 +64,28 @@ aplikace; není určený k veřejné registraci ani jako účetní systém.
   nezahrnují.
 - Uploady mají velikostní limit, allowlist MIME typů a kontrolu binární
   signatury. Storage keys jsou náhodné a chráněné proti path traversal.
-- Při lokálním čtení PDF a příloh se ověřuje uložená velikost a SHA-256. S3 PDF
-  používají autorizovaný redirect na signed URL s platností 300 sekund; backend
-  při downloadu znovu nestahuje celý objekt pro kontrolu hashe.
-- S3 inicializace vyžaduje všechny čtyři bucket Block Public Access přepínače.
-  Upload nepoužívá ACL a podmínka `If-None-Match: *` brání přepsání objektu.
-  Podepisuje se pouze klíč z organization-scoped DB dotazu, po ověření
-  uživatele. Signed URL je krátkodobý bearer přístup: držitel jej může po dobu
-  platnosti použít. Credentials, tokeny a signed URL se neukládají do DB ani
-  aplikačních logů.
+- PDF a přílohy z R2 se načítají až po autorizaci a před výdejem se ověřuje
+  jejich velikost a SHA-256. Buckety nemají veřejnou doménu ani r2.dev přístup.
+- PDF upload používá podmínku `etagDoesNotMatch: "*"`, takže nemůže přepsat
+  existující objekt. Metadata PDF jsou v D1 neměnná. Credentials a tokeny se
+  neukládají do aplikačních logů.
 - Požadavky s deklarovanou velikostí nad 21 MiB se odmítnou ještě před
   parsováním formuláře.
 
 ## Zbytková rizika a provozní požadavky
 
-- Better Auth omezuje frekvenci auth endpointů v paměti instance. Reverzní proxy
-  musí navíc omezit počet pokusů napříč instancemi a nastavit absolutní limit
-  těla i pro chunked přenos.
+- Better Auth ukládá rate limit do D1 a používá Cloudflare `CF-Connecting-IP`.
+  Provozní ochrana musí omezit i velikost chunked přenosů.
 - Chybí vícefaktorové přihlášení, obnova hesla, správa aktivních sessions a
   bezpečnostní audit log.
 - Globální šablony jsou databázově neměnné; změna uživatele vytvoří tenantovou
   kopii viditelnou pouze členům příslušného subjektu.
 - Uploady nemají antivirovou kontrolu ani sandbox analýzu obsahu.
-- Lokální object storage spoléhá na oprávnění a šifrování hostitelského disku;
-  produkční zálohy a alternativní storage musí zajistit provozovatel.
-- TLS musí ukončovat důvěryhodná reverzní proxy. `APP_ENV=production` je nutný
-  pro `Secure` cookies a HSTS.
+- Provozovatel musí zajistit společné zálohy D1/R2 a ověřenou obnovu.
+- Atomické D1 zápisy používají kontrolu společné revize a opakování při
+  konfliktu. Při trvalém souběhu operace selže bez částečného zápisu.
+- TLS ukončuje Cloudflare. `APP_ENV=production` je nutný pro `Secure` cookies a
+  HSTS.
 
 Bezpečnostní incident, podezření na únik šifrovacího klíče nebo kompromitaci
 databáze vyžaduje výměnu Fio tokenů; samotná rotace klíče existující ciphertexty

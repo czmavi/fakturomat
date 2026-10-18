@@ -6,7 +6,7 @@ import BankAccountForm, {
 } from "@/components/BankAccountForm.tsx";
 import type { BankAccount, BankAccountInput } from "@/domain/banking/types.ts";
 import { isUuid } from "@/domain/organizations/types.ts";
-import { PostgresBankAccountRepository } from "@/repositories/bank_account_repository.ts";
+import { D1BankAccountRepository } from "@/repositories/bank_account_repository.ts";
 import {
   BankAccountService,
   BankAccountValidationError,
@@ -40,7 +40,7 @@ async function findAccount(
   },
 ) {
   if (!isUuid(ctx.params.bankAccountId)) return null;
-  return await new PostgresBankAccountRepository().findForUser(
+  return await new D1BankAccountRepository().findForUser(
     ctx.params.organizationId,
     ctx.params.bankAccountId,
     ctx.state.user!.id,
@@ -69,7 +69,7 @@ export const handler = define.handlers<PageData>({
     }
     try {
       const account = await new BankAccountService(
-        new PostgresBankAccountRepository(),
+        new D1BankAccountRepository(),
       ).update({
         ...values,
         id: ctx.params.bankAccountId,

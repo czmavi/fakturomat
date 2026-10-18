@@ -18,11 +18,11 @@ import {
   formatBankAmountForDisplay,
 } from "@/domain/banking/types.ts";
 import { isUuid } from "@/domain/organizations/types.ts";
-import { PostgresBankAccountRepository } from "@/repositories/bank_account_repository.ts";
-import { PostgresBankConnectionRepository } from "@/repositories/bank_connection_repository.ts";
-import { PostgresBankTransactionRepository } from "@/repositories/bank_transaction_repository.ts";
-import { PostgresExpensePaymentRepository } from "@/repositories/expense_payment_repository.ts";
-import { PostgresInvoicePaymentRepository } from "@/repositories/invoice_payment_repository.ts";
+import { D1BankAccountRepository } from "@/repositories/bank_account_repository.ts";
+import { D1BankConnectionRepository } from "@/repositories/bank_connection_repository.ts";
+import { D1BankTransactionRepository } from "@/repositories/bank_transaction_repository.ts";
+import { D1ExpensePaymentRepository } from "@/repositories/expense_payment_repository.ts";
+import { D1InvoicePaymentRepository } from "@/repositories/invoice_payment_repository.ts";
 import {
   BankSyncError,
   createBankSyncService,
@@ -104,8 +104,8 @@ async function loadPageData(input: {
   syncDateFrom?: string;
   syncDateTo?: string;
 }): Promise<PageData> {
-  const accountRepository = new PostgresBankAccountRepository();
-  const connectionRepository = new PostgresBankConnectionRepository();
+  const accountRepository = new D1BankAccountRepository();
+  const connectionRepository = new D1BankConnectionRepository();
   const bankAccounts = await accountRepository.listForUser(
     input.organizationId,
     input.userId,
@@ -133,7 +133,7 @@ async function loadPageData(input: {
   const requestedDateTo = input.url.searchParams.get("to");
   const dateFrom = validDate(requestedDateFrom) ? requestedDateFrom : null;
   const dateTo = validDate(requestedDateTo) ? requestedDateTo : null;
-  const transactions = await new PostgresBankTransactionRepository()
+  const transactions = await new D1BankTransactionRepository()
     .listForUser({
       organizationId: input.organizationId,
       userId: input.userId,
@@ -142,8 +142,8 @@ async function loadPageData(input: {
       dateFrom,
       dateTo,
     });
-  const paymentRepository = new PostgresInvoicePaymentRepository();
-  const expensePaymentRepository = new PostgresExpensePaymentRepository();
+  const paymentRepository = new D1InvoicePaymentRepository();
+  const expensePaymentRepository = new D1ExpensePaymentRepository();
   const [payments, invoiceCandidates, expensePayments, expenseCandidates] =
     await Promise.all([
       paymentRepository.listForTransactionIdsForUser(
@@ -232,7 +232,7 @@ export const handler = define.handlers<PageData>({
       );
     }
     const paymentService = new InvoicePaymentService(
-      new PostgresInvoicePaymentRepository(),
+      new D1InvoicePaymentRepository(),
     );
     if (intent === "manual_match") {
       const bankTransactionId = String(form.get("bank_transaction_id") ?? "");
@@ -282,7 +282,7 @@ export const handler = define.handlers<PageData>({
       );
     }
     const expensePaymentService = new ExpensePaymentService(
-      new PostgresExpensePaymentRepository(),
+      new D1ExpensePaymentRepository(),
     );
     if (intent === "manual_expense_match") {
       const bankTransactionId = String(form.get("bank_transaction_id") ?? "");
