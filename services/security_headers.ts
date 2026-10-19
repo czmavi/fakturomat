@@ -11,9 +11,21 @@ export function requestContentLengthIsTooLarge(request: Request): boolean {
   return !Number.isSafeInteger(length) || length > MAX_REQUEST_CONTENT_LENGTH;
 }
 
+// Fresh 2 attaches its render nonce to the Response via this shared symbol.
+// Use the renderer's nonce, rather than generating a different one or reading HTML.
+function freshRenderNonce(response: Response): string | undefined {
+  const nonce: unknown = (response as Response & { [key: symbol]: unknown })[
+    Symbol.for("__freshNonce")
+  ];
+  return typeof nonce === "string" && /^[a-f0-9]{32}$/.test(nonce)
+    ? nonce
+    : undefined;
+}
+
 function contentSecurityPolicy(
   isTemplatePreview: boolean,
   environment: AppEnvironment,
+  nonce?: string,
 ): string {
   if (isTemplatePreview) {
     return [
@@ -37,7 +49,7 @@ function contentSecurityPolicy(
     "frame-ancestors 'none'",
     "img-src 'self' data:",
     "object-src 'none'",
-    "script-src 'self'",
+    nonce ? `script-src 'self' 'nonce-${nonce}'` : "script-src 'self'",
     environment === "development"
       ? "style-src 'self' 'unsafe-inline'"
       : "style-src 'self'",
@@ -55,7 +67,11 @@ export function applySecurityHeaders(
   if (!response.headers.has("Content-Security-Policy")) {
     response.headers.set(
       "Content-Security-Policy",
-      contentSecurityPolicy(isTemplatePreview, environment),
+      contentSecurityPolicy(
+        isTemplatePreview,
+        environment,
+        freshRenderNonce(response),
+      ),
     );
   }
   if (!response.headers.has("Cache-Control")) {

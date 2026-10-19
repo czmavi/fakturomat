@@ -1,3 +1,4 @@
+import BankAccountNumbers from "@/islands/BankAccountNumbers.tsx";
 import type { BankAccountInput } from "@/domain/banking/types.ts";
 
 export interface BankAccountFormProps {
@@ -75,56 +76,8 @@ export default function BankAccountForm(props: BankAccountFormProps) {
         </label>
       </div>
 
-      <fieldset>
-        <legend class="text-sm font-semibold">České číslo účtu</legend>
-        <p class="mt-1 text-xs text-[#758078]">
-          Vyplňte české číslo účtu, IBAN, nebo obojí.
-        </p>
-        <div class="mt-4 grid grid-cols-[0.8fr_1.4fr_0.8fr] gap-3">
-          <label>
-            <span class="mb-2 block text-xs text-[#667169]">Předčíslí</span>
-            <input
-              name="account_prefix"
-              inputmode="numeric"
-              value={props.values.accountPrefix}
-              maxlength={6}
-              class={inputClass}
-            />
-          </label>
-          <label>
-            <span class="mb-2 block text-xs text-[#667169]">Číslo účtu</span>
-            <input
-              name="account_number"
-              inputmode="numeric"
-              value={props.values.accountNumber}
-              maxlength={10}
-              class={inputClass}
-            />
-          </label>
-          <label>
-            <span class="mb-2 block text-xs text-[#667169]">Kód banky</span>
-            <input
-              name="bank_code"
-              inputmode="numeric"
-              value={props.values.bankCode}
-              maxlength={4}
-              class={inputClass}
-            />
-          </label>
-        </div>
-      </fieldset>
-
+      <BankAccountNumbers values={props.values} />
       <div class="grid gap-5 sm:grid-cols-2">
-        <label class="block sm:col-span-2">
-          <span class="mb-2 block text-sm font-medium">IBAN</span>
-          <input
-            name="iban"
-            value={props.values.iban}
-            maxlength={42}
-            class={inputClass}
-            placeholder="CZ63 2010 0000 0029 0000 0001"
-          />
-        </label>
         <label class="block">
           <span class="mb-2 block text-sm font-medium">BIC / SWIFT</span>
           <input

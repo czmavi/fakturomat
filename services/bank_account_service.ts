@@ -1,3 +1,11 @@
+import {
+  czechAccountFromIban,
+  czechAccountToIban,
+  isValidCzechAccount,
+  isValidIban,
+  normalizeIban,
+} from "@/domain/banking/account_number.ts";
+export { isValidIban, normalizeIban } from "@/domain/banking/account_number.ts";
 import type {
   BankAccount,
   BankAccountInput,
@@ -12,36 +20,16 @@ function optional(value: string): string | null {
   return trimmed === "" ? null : trimmed;
 }
 
-export function normalizeIban(value: string): string {
-  return value.replaceAll(/\s+/g, "").toLocaleUpperCase("en-US");
-}
-
-export function isValidIban(value: string): boolean {
-  const iban = normalizeIban(value);
-  if (!/^[A-Z]{2}[0-9]{2}[A-Z0-9]{11,30}$/.test(iban)) return false;
-  const rearranged = iban.slice(4) + iban.slice(0, 4);
-  let remainder = 0;
-  for (const character of rearranged) {
-    const numeric = character >= "A"
-      ? String(character.charCodeAt(0) - 55)
-      : character;
-    for (const digit of numeric) {
-      remainder = (remainder * 10 + Number(digit)) % 97;
-    }
-  }
-  return remainder === 1;
-}
-
 function validateAndNormalize(
   input: BankAccountInput,
 ): NormalizedBankAccountInput {
   const name = input.name.trim();
   const bankName = optional(input.bankName);
-  const accountPrefix = optional(input.accountPrefix);
-  const accountNumber = optional(input.accountNumber);
-  const bankCode = optional(input.bankCode);
+  let accountPrefix = optional(input.accountPrefix);
+  let accountNumber = optional(input.accountNumber);
+  let bankCode = optional(input.bankCode);
   const rawIban = optional(input.iban);
-  const iban = rawIban ? normalizeIban(rawIban) : null;
+  let iban = rawIban ? normalizeIban(rawIban) : null;
   const rawBic = optional(input.bic);
   const bic = rawBic?.toLocaleUpperCase("en-US") ?? null;
   const currency = input.currency.trim().toLocaleUpperCase("en-US");
@@ -75,6 +63,39 @@ function validateAndNormalize(
   }
   if (!iban && !accountNumber) {
     throw new BankAccountValidationError("Vyplňte české číslo účtu nebo IBAN.");
+  }
+  if (accountPrefix && !accountNumber) {
+    throw new BankAccountValidationError(
+      "Předčíslí vyplňte společně s číslem účtu a kódem banky.",
+    );
+  }
+  if (accountNumber && bankCode) {
+    if (!isValidCzechAccount(accountPrefix ?? "", accountNumber, bankCode)) {
+      throw new BankAccountValidationError(
+        "Číslo účtu nebo předčíslí nemá platný kontrolní součet (modulo 11).",
+      );
+    }
+    const calculated = czechAccountToIban(
+      accountPrefix ?? "",
+      accountNumber,
+      bankCode,
+    )!;
+    if (iban && iban !== calculated) {
+      throw new BankAccountValidationError(
+        "IBAN neodpovídá zadanému českému číslu účtu.",
+      );
+    }
+    iban = calculated;
+  } else if (iban?.startsWith("CZ")) {
+    const local = czechAccountFromIban(iban);
+    if (!local) {
+      throw new BankAccountValidationError(
+        "Český IBAN obsahuje neplatné číslo účtu.",
+      );
+    }
+    accountPrefix = local.accountPrefix || null;
+    accountNumber = local.accountNumber;
+    bankCode = local.bankCode;
   }
   if (bic && !/^[A-Z0-9]{8}([A-Z0-9]{3})?$/.test(bic)) {
     throw new BankAccountValidationError("BIC musí mít 8 nebo 11 znaků.");

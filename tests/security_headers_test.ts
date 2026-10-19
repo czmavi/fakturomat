@@ -114,3 +114,25 @@ Deno.test("declared oversized request bodies are rejected early", () => {
     "small declared body was rejected",
   );
 });
+
+Deno.test("Fresh nonce does not loosen template previews or an existing policy", () => {
+  for (const existing of [undefined, "sandbox; default-src 'none'"]) {
+    const response = new Response("preview", {
+      headers: existing ? { "Content-Security-Policy": existing } : {},
+    });
+    Object.defineProperty(response, Symbol.for("__freshNonce"), {
+      value: "a".repeat(32),
+    });
+    applySecurityHeaders(
+      response,
+      new URL("https://fakturomat.test/templates/t/versions/v/preview"),
+      "production",
+    );
+    const policy = response.headers.get("Content-Security-Policy")!;
+    assert(!policy.includes("nonce-"), "preview allows scripts");
+    assert(
+      existing ? policy === existing : policy.includes("script-src 'none'"),
+      "strict policy changed",
+    );
+  }
+});

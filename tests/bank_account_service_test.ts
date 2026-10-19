@@ -58,12 +58,12 @@ function assert(condition: boolean, message: string): asserts condition {
 
 Deno.test("IBAN validation normalizes spaces and verifies checksum", () => {
   assert(
-    normalizeIban("cz63 2010 0000 0029 0000 0001") ===
-      "CZ6320100000002900000001",
+    normalizeIban("cz52 2010 0000 0029 0000 0005") ===
+      "CZ5220100000002900000005",
     "IBAN was not normalized",
   );
   assert(
-    isValidIban("CZ63 2010 0000 0029 0000 0001"),
+    isValidIban("CZ52 2010 0000 0029 0000 0005"),
     "valid IBAN was rejected",
   );
   assert(
@@ -80,9 +80,9 @@ Deno.test("bank account service normalizes optional fields", async () => {
     name: " Hlavní účet ",
     bankName: "",
     accountPrefix: "",
-    accountNumber: "2900000001",
+    accountNumber: "2900000005",
     bankCode: "2010",
-    iban: "cz63 2010 0000 0029 0000 0001",
+    iban: "cz52 2010 0000 0029 0000 0005",
     bic: "fiobczppxxx",
     currency: "czk",
     isDefault: true,
@@ -106,7 +106,7 @@ Deno.test("inactive account cannot be selected as default", async () => {
       name: "Inactive account",
       bankName: "",
       accountPrefix: "",
-      accountNumber: "123456789",
+      accountNumber: "2000145399",
       bankCode: "0100",
       iban: "",
       bic: "",
@@ -118,4 +118,88 @@ Deno.test("inactive account cannot be selected as default", async () => {
     rejected = error instanceof BankAccountValidationError;
   }
   assert(rejected, "inactive default account was accepted");
+});
+
+const validInput = {
+  organizationId: "organization",
+  userId: "user",
+  name: "Hlavní účet",
+  bankName: "",
+  accountPrefix: "",
+  accountNumber: "2900000005",
+  bankCode: "2010",
+  iban: "",
+  bic: "",
+  currency: "CZK",
+  isDefault: false,
+  isActive: true,
+};
+
+Deno.test("domestic account generates IBAN on create and IBAN generates local account on update", async () => {
+  const service = new BankAccountService(new FakeBankAccountRepository());
+  const created = await service.create(validInput);
+  assert(
+    created?.iban === "CZ5220100000002900000005",
+    "missing generated IBAN",
+  );
+  const updated = await service.update({
+    ...validInput,
+    id: "account",
+    accountNumber: "",
+    bankCode: "",
+    iban: "cz52 2010 0000 0029 0000 0005",
+  });
+  assert(
+    updated?.accountNumber === "2900000005" && updated.bankCode === "2010" &&
+      updated.accountPrefix === null,
+    "missing domestic account",
+  );
+});
+
+Deno.test("bank account rejects invalid checksums, orphan prefix and conflicting formats", async () => {
+  for (
+    const changes of [
+      { accountNumber: "2900000002" },
+      { accountPrefix: "18" },
+      { accountNumber: "0000000000" },
+      { bankCode: "0000" },
+      {
+        accountPrefix: "19",
+        accountNumber: "",
+        bankCode: "",
+        iban: "CZ5220100000002900000005",
+      },
+      { iban: "CZ6508000000192000145399" },
+      { iban: "DE89370400440532013000" },
+    ]
+  ) {
+    const repository = new FakeBankAccountRepository();
+    let rejected = false;
+    try {
+      await new BankAccountService(repository).create({
+        ...validInput,
+        ...changes,
+      });
+    } catch (error) {
+      rejected = error instanceof BankAccountValidationError;
+    }
+    assert(
+      rejected && repository.created === null,
+      `accepted ${JSON.stringify(changes)}`,
+    );
+  }
+});
+
+Deno.test("foreign IBAN remains usable without a domestic account", async () => {
+  const account = await new BankAccountService(new FakeBankAccountRepository())
+    .create({
+      ...validInput,
+      accountNumber: "",
+      bankCode: "",
+      iban: "DE89370400440532013000",
+    });
+  assert(
+    account?.accountNumber === null && account.bankCode === null,
+    "invented Czech account",
+  );
 });
