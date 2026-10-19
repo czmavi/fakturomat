@@ -217,3 +217,47 @@ Deno.test("Signed PDF verification binds bytes, user, organization and current c
     else Deno.env.set("APP_ENV", previous);
   }
 });
+
+Deno.test("PDF fetch is called without the service receiver, as required by Workers", async () => {
+  let called = false;
+  const fetcher: typeof fetch = function (this: unknown, _url, _init) {
+    assert(
+      this === undefined,
+      "Illegal invocation: fetch received service as this",
+    );
+    called = true;
+    return Promise.resolve(Response.json({
+      status: "completed",
+      output: [{
+        type: "message",
+        content: [{ type: "output_text", text: JSON.stringify(invoice) }],
+      }],
+    }));
+  };
+  const result = await new ExpensePdfService(
+    { apiKey: "test", model: "test" },
+    fetcher,
+  ).extract(file, company);
+  assert(
+    called && result.values.supplierName === invoice.supplierName,
+    "Extraction did not complete",
+  );
+});
+
+Deno.test("Only a real abort or timeout is reported as a timeout", async () => {
+  for (const name of ["TimeoutError", "AbortError", "TypeError"]) {
+    try {
+      await new ExpensePdfService(
+        { apiKey: "test", model: "test" },
+        () => Promise.reject(new DOMException("synthetic", name)),
+      ).extract(file, company);
+      throw new Error("Expected error");
+    } catch (error) {
+      assert(error instanceof ExpensePdfError, "Unexpected error");
+      assert(
+        error.message.includes("neodpovědělo včas") === (name !== "TypeError"),
+        "Wrong timeout classification",
+      );
+    }
+  }
+});

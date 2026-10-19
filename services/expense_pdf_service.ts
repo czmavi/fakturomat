@@ -150,9 +150,19 @@ export class ExpensePdfService {
         "Zpracování PDF není nakonfigurováno. Nastavte OPENAI_API_KEY na serveru.",
       );
     }
+    let fileData: string;
+    try {
+      fileData = `data:application/pdf;base64,${bytes.toBase64()}`;
+    } catch {
+      throw new ExpensePdfError(
+        "PDF se nepodařilo připravit k odeslání. Zkuste jiné PDF nebo zadejte náklad ručně.",
+      );
+    }
+    // Worker fetch requires its global receiver, not the service instance.
+    const fetcher = this.fetcher;
     let response: Response;
     try {
-      response = await this.fetcher("https://api.openai.com/v1/responses", {
+      response = await fetcher("https://api.openai.com/v1/responses", {
         method: "POST",
         headers: {
           Authorization: `Bearer ${this.config.apiKey}`,
@@ -170,7 +180,7 @@ export class ExpensePdfService {
             content: [{
               type: "input_file",
               filename: "invoice.pdf",
-              file_data: `data:application/pdf;base64,${bytes.toBase64()}`,
+              file_data: fileData,
             }],
           }],
           text: {
@@ -183,9 +193,17 @@ export class ExpensePdfService {
           },
         }),
       });
-    } catch {
+    } catch (error) {
+      const timedOut = error instanceof Error &&
+        (error.name === "TimeoutError" || error.name === "AbortError");
+      console.error("Expense PDF request failed", {
+        kind: timedOut ? "timeout" : "connection",
+        errorName: error instanceof Error ? error.name : "UnknownError",
+      });
       throw new ExpensePdfError(
-        "OpenAI neodpovědělo včas. Zkuste zpracování znovu.",
+        timedOut
+          ? "OpenAI neodpovědělo včas. Zkuste zpracování znovu."
+          : "Požadavek na zpracování PDF se nepodařilo odeslat nebo došlo k chybě spojení s OpenAI. Zkuste to znovu.",
       );
     }
     if (!response.ok) {
