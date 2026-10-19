@@ -16,7 +16,7 @@
   "vars": {
     "APP_ENV": "production",
     "BETTER_AUTH_URL": "https://fakturomat.caretsix.com",
-    "OPENAI_EXPENSE_MODEL": "gpt-6-luna"
+    "OPENAI_EXPENSE_MODEL": "gpt-6.1-sol"
   },
   "d1_databases": [
     {
