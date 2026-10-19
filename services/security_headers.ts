@@ -26,6 +26,7 @@ function contentSecurityPolicy(
   isTemplatePreview: boolean,
   environment: AppEnvironment,
   nonce?: string,
+  allowImageConversion = false,
 ): string {
   if (isTemplatePreview) {
     return [
@@ -53,7 +54,7 @@ function contentSecurityPolicy(
     environment === "development"
       ? "style-src 'self' 'unsafe-inline'"
       : "style-src 'self'",
-    "worker-src 'none'",
+    allowImageConversion ? "worker-src 'self' blob:" : "worker-src 'none'",
   ].join("; ");
 }
 
@@ -71,6 +72,7 @@ export function applySecurityHeaders(
         isTemplatePreview,
         environment,
         freshRenderNonce(response),
+        /^\/o\/[^/]+\/expenses(?:\/|$)/.test(url.pathname),
       ),
     );
   }

@@ -40,6 +40,7 @@
     "better-auth": "npm:better-auth@1.6.26",
     "dejavu-fonts-ttf": "npm:dejavu-fonts-ttf@2.37.3",
     "fresh": "jsr:@fresh/core@^2.3.3",
+    "heic-to": "npm:heic-to@1.6.6",
     "miniflare": "npm:miniflare@5.20261012.1-beta",
     "pdf-lib": "npm:pdf-lib@1.17.1",
     "pg": "npm:pg@8.16.3",

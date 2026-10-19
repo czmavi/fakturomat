@@ -136,3 +136,17 @@ Deno.test("Fresh nonce does not loosen template previews or an existing policy",
     );
   }
 });
+
+Deno.test("expense pages allow the CSP-safe HEIC decoder worker without unsafe script evaluation", () => {
+  const response = applySecurityHeaders(
+    new Response("page"),
+    new URL("https://fakturomat.test/o/org/expenses/new"),
+    "production",
+  );
+  const policy = response.headers.get("Content-Security-Policy")!;
+  assert(policy.includes("worker-src 'self' blob:"), "HEIC worker blocked");
+  assert(
+    !policy.includes("unsafe-eval") && !policy.includes("unsafe-inline"),
+    "Script policy weakened",
+  );
+});

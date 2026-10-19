@@ -1,8 +1,6 @@
+import { readInvoiceFile } from "@/domain/expenses/files.ts";
 import ExpensePdfImport from "@/islands/ExpensePdfImport.tsx";
-import {
-  ExpensePdfError,
-  readInvoicePdf,
-} from "@/services/expense_pdf_service.ts";
+import { ExpensePdfError } from "@/services/expense_pdf_service.ts";
 import { verifyPdfProof } from "@/services/expense_pdf_proof.ts";
 import { normalizeExpenseInput } from "@/services/expense_service.ts";
 import { getObjectStorage } from "@/services/storage/storage_factory.ts";
@@ -87,7 +85,7 @@ export const handler = define.handlers<PageData>({
         values,
         error:
           form.get("pdf") instanceof File && (form.get("pdf") as File).size > 0
-            ? `${message} PDF vyberte a načtěte znovu před uložením.`
+            ? `${message} Soubor vyberte a načtěte znovu před uložením.`
             : message,
       }, { status });
     if (!isValidCsrfToken(ctx.state.csrfToken, form.get("csrf_token"))) {
@@ -106,7 +104,15 @@ export const handler = define.handlers<PageData>({
         if (!settings) {
           return new Response("Firma není dostupná.", { status: 404 });
         }
-        const bytes = await readInvoicePdf(file);
+        let document;
+        try {
+          document = await readInvoiceFile(file);
+        } catch (error) {
+          throw new ExpensePdfError(
+            error instanceof Error ? error.message : "Neplatný soubor dokladu.",
+          );
+        }
+        const { bytes, mimeType, extension } = document;
         await verifyPdfProof(
           String(form.get("pdf_proof") ?? ""),
           bytes,
@@ -118,7 +124,7 @@ export const handler = define.handlers<PageData>({
         const id = crypto.randomUUID();
         const attachmentId = crypto.randomUUID();
         const storageKey =
-          `organizations/${settings.id}/expenses/${id}/${attachmentId}.pdf`;
+          `organizations/${settings.id}/expenses/${id}/${attachmentId}.${extension}`;
         const storage = getObjectStorage();
         await storage.put(storageKey, bytes);
         try {
@@ -132,8 +138,8 @@ export const handler = define.handlers<PageData>({
               organizationId: settings.id,
               expenseId: id,
               filename: file.name.replaceAll("\\", "/").split("/").at(-1) ||
-                "invoice.pdf",
-              mimeType: "application/pdf",
+                `invoice.${extension}`,
+              mimeType,
               size: bytes.length,
               storageKey,
               sha256: await sha256Hex(bytes),
@@ -147,7 +153,7 @@ export const handler = define.handlers<PageData>({
       } else {
         if (form.get("pdf_proof")) {
           throw new ExpensePdfError(
-            "PDF příloha chybí. Načtěte fakturu znovu.",
+            "Příloha dokladu chybí. Načtěte fakturu znovu.",
           );
         }
         expense = await new ExpenseService(repository).create({

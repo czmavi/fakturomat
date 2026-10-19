@@ -49,7 +49,7 @@ export const handler = define.handlers<PageData>({
           ctx.params.organizationId,
           ctx.params.expenseId,
           ctx.state.user!.id,
-        )).filter((file) => file.mimeType === "application/pdf").map((
+        )).map((
           { id, filename },
         ) => ({ id, filename })),
       autoExtract: ctx.url.searchParams.get("ai") === "1",
@@ -74,7 +74,7 @@ export const handler = define.handlers<PageData>({
             ctx.params.organizationId,
             ctx.params.expenseId,
             ctx.state.user!.id,
-          )).filter((file) => file.mimeType === "application/pdf").map((
+          )).map((
             { id, filename },
           ) => ({ id, filename })),
         values,

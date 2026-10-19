@@ -51,6 +51,7 @@
     "npm:esbuild-wasm@~0.25.11": "0.25.12",
     "npm:esbuild@0.25.7": "0.25.7",
     "npm:esbuild@~0.25.5": "0.25.12",
+    "npm:heic-to@1.6.6": "1.6.6",
     "npm:miniflare@5.20261012.1-beta": "5.20261012.1-beta",
     "npm:pdf-lib@1.17.1": "1.17.1",
     "npm:pg@8.16.3": "8.16.3",
@@ -2011,6 +2012,9 @@
     "graceful-fs@4.2.11": {
       "integrity": "sha512-RbJ5/jmFcNNCcDV5o9eTnBLJ/HszWV0P73bc+Ff4nS/rJj+YaS6IGyiOL0VoBYX+l1Wrl3k63h/KrH+nhJ0XvQ=="
     },
+    "heic-to@1.6.6": {
+      "integrity": "sha512-PYpOtPFEzgPxIoGF4LQ+oBD8o/tMvcFDNynrNzK1fLXfE6mTe2W+AHOvBKc5MwnVak4/Pnb51g9CJAtWL5YGWA=="
+    },
     "is-fullwidth-code-point@3.0.0": {
       "integrity": "sha512-zymm5+u+sCsSWyD9qNaejV3DFvhCKclKdizYaJUuHA83RLjb7nSuGnddCHGv0hk+KY7BMAlsWeK4Ueg6EV6XQg=="
     },
@@ -2594,6 +2598,7 @@
       "npm:@types/qrcode@^1.5.6",
       "npm:better-auth@1.6.26",
       "npm:dejavu-fonts-ttf@2.37.3",
+      "npm:heic-to@1.6.6",
       "npm:miniflare@5.20261012.1-beta",
       "npm:pdf-lib@1.17.1",
       "npm:pg@8.16.3",

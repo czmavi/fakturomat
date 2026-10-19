@@ -498,3 +498,47 @@ Deno.test("Invoice IBAN accepts ordinary and nonbreaking spaces, and reports ori
     "Invisible character missing from diagnosis",
   );
 });
+
+Deno.test("Invoice images are sent as high-detail image inputs, not PDF files", async () => {
+  for (
+    const [bytes, type] of [[
+      new Uint8Array([255, 216, 255, 224]),
+      "image/jpeg",
+    ], [
+      new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]),
+      "image/png",
+    ]] as const
+  ) {
+    const image = new File([bytes], "invoice", { type });
+    let called = false;
+    const service = new ExpensePdfService(
+      { apiKey: "test", model: "test" },
+      (_url, init) => {
+        called = true;
+        const content = JSON.parse(String(init?.body)).input[0].content[0];
+        assert(
+          content.type === "input_image" && content.detail === "high",
+          "Wrong image payload",
+        );
+        assert(
+          content.image_url === `data:${type};base64,${bytes.toBase64()}`,
+          "Wrong image bytes",
+        );
+        return Promise.resolve(
+          Response.json({
+            status: "completed",
+            output: [{
+              type: "message",
+              content: [{ type: "output_text", text: JSON.stringify(invoice) }],
+            }],
+          }),
+        );
+      },
+    );
+    const result = await service.extract(image, company);
+    assert(
+      called && result.values.supplierName === invoice.supplierName,
+      "Image extraction failed",
+    );
+  }
+});

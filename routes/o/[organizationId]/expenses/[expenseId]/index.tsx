@@ -1,3 +1,4 @@
+import ExpenseAttachmentUpload from "@/islands/ExpenseAttachmentUpload.tsx";
 import { emptyExpenseDetails } from "@/domain/expenses/details.ts";
 import { page } from "fresh";
 import { Head } from "fresh/runtime";
@@ -274,7 +275,7 @@ export default define.page<typeof handler>(({ data, params, state }) => {
               : (
                 <p class="mt-2 text-sm text-[#667169]">
                   Položky zatím nejsou vyplněné. Můžete je doplnit ručně nebo z
-                  PDF pomocí AI.
+                  souboru pomocí AI.
                 </p>
               )}
           </section>
@@ -391,35 +392,14 @@ export default define.page<typeof handler>(({ data, params, state }) => {
             <div>
               <h2 class="text-lg font-semibold">Přílohy dokladu</h2>
               <p class="mt-1 text-sm text-[#667169]">
-                PDF a obrázky JPG, JPEG nebo PNG do velikosti 20 MB.
+                PDF a fotografie dokladů včetně iPhone HEIC do velikosti 20 MB.
               </p>
             </div>
 
-            <form
-              method="post"
+            <ExpenseAttachmentUpload
               action={`${root}/${expense.id}/attachments`}
-              enctype="multipart/form-data"
-              class="mt-4 flex flex-col gap-3 rounded-xl bg-[#f5f7f5] p-4 sm:flex-row sm:items-center"
-            >
-              <input
-                type="hidden"
-                name="csrf_token"
-                value={state.csrfToken}
-              />
-              <input
-                type="file"
-                name="attachment"
-                accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
-                required
-                class="min-w-0 flex-1 text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-white file:px-3 file:py-2 file:font-semibold"
-              />
-              <button
-                type="submit"
-                class="shrink-0 rounded-xl bg-[#183e2a] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#23583b]"
-              >
-                Nahrát přílohu
-              </button>
-            </form>
+              csrfToken={state.csrfToken}
+            />
 
             <div class="mt-4 overflow-hidden rounded-xl border border-[#e0e5e1]">
               {data.attachments.map((attachment) => {

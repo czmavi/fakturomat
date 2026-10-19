@@ -70,7 +70,7 @@ export async function verifyPdfProof(
     verifyRecipient(data.recipient, company);
   } catch {
     throw new ExpensePdfError(
-      "Ověření PDF vypršelo nebo se změnil soubor či firma. Načtěte fakturu znovu.",
+      "Ověření dokladu vypršelo nebo se změnil soubor či firma. Načtěte fakturu znovu.",
     );
   }
 }

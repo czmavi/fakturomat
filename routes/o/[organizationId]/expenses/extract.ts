@@ -1,3 +1,4 @@
+import { readInvoiceFile } from "@/domain/expenses/files.ts";
 import { D1ExpenseAttachmentRepository } from "@/repositories/expense_attachment_repository.ts";
 import { getObjectStorage } from "@/services/storage/storage_factory.ts";
 import { sha256Hex } from "@/services/storage/integrity.ts";
@@ -10,7 +11,6 @@ import { isValidCsrfToken } from "@/services/csrf_service.ts";
 import {
   ExpensePdfError,
   ExpensePdfService,
-  readInvoicePdf,
 } from "@/services/expense_pdf_service.ts";
 import { ExpenseValidationError } from "@/services/expense_service.ts";
 import { createPdfProof } from "@/services/expense_pdf_proof.ts";
@@ -43,11 +43,6 @@ export const handler = define.handlers({
         if (!attachment) {
           return respond({ error: "Příloha nákladu není dostupná." }, 404);
         }
-        if (attachment.mimeType !== "application/pdf") {
-          throw new ExpensePdfError(
-            "Pro doplnění s AI vyberte uloženou PDF fakturu.",
-          );
-        }
         const object = await getObjectStorage().get(attachment.storageKey);
         if (!object || await sha256Hex(object.data) !== attachment.sha256) {
           throw new ExpensePdfError(
@@ -59,14 +54,14 @@ export const handler = define.handlers({
         });
       }
       if (!(file instanceof File)) {
-        throw new ExpensePdfError("Vyberte PDF fakturu.");
+        throw new ExpensePdfError("Vyberte PDF nebo obrázek faktury.");
       }
       const result = await new ExpensePdfService({
         apiKey: envValue("OPENAI_API_KEY") ?? "",
         model: envValue("OPENAI_EXPENSE_MODEL")?.trim() || "gpt-4.1-mini",
       }).extract(file, settings);
       const proof = await createPdfProof(
-        await readInvoicePdf(file),
+        (await readInvoiceFile(file)).bytes,
         settings.id,
         ctx.state.user!.id,
         result.recipient,
