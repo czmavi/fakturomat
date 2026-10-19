@@ -1,3 +1,4 @@
+import { normalizeExpenseDetails } from "@/domain/expenses/details.ts";
 import { isUuid } from "@/domain/organizations/types.ts";
 import {
   normalizeMoney,
@@ -98,7 +99,18 @@ export function normalizeExpenseInput(
     }
     throw error;
   }
+  let details;
+  try {
+    details = normalizeExpenseDetails(input.details);
+  } catch (error) {
+    throw new ExpenseValidationError(
+      error instanceof Error
+        ? error.message
+        : "Neplatné položky nebo platební údaje.",
+    );
+  }
   return {
+    details,
     contactId: nullable(input.contactId),
     documentType: input.documentType,
     supplierName,

@@ -1,3 +1,4 @@
+import type { ExpenseDetails } from "./details.ts";
 export const EXPENSE_DOCUMENT_TYPES = ["INVOICE", "RECEIPT", "OTHER"] as const;
 export type ExpenseDocumentType = typeof EXPENSE_DOCUMENT_TYPES[number];
 
@@ -39,6 +40,7 @@ export interface NormalizedExpenseVatLineInput {
 }
 
 export interface ExpenseSummary {
+  details?: ExpenseDetails;
   id: string;
   organizationId: string;
   contactId: string | null;
@@ -67,6 +69,7 @@ export interface Expense extends ExpenseSummary {
 }
 
 export interface ExpenseFormInput {
+  details?: ExpenseDetails;
   contactId: string;
   documentType: string;
   supplierName: string;
@@ -84,6 +87,7 @@ export interface ExpenseFormInput {
 }
 
 export interface NormalizedExpenseInput {
+  details?: ExpenseDetails;
   contactId: string | null;
   documentType: ExpenseDocumentType;
   supplierName: string;

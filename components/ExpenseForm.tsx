@@ -1,3 +1,6 @@
+import ExpenseDetailsEditor from "@/islands/ExpenseDetailsEditor.tsx";
+import { emptyExpenseDetails } from "@/domain/expenses/details.ts";
+import type { ContactFormInput } from "@/domain/contacts/types.ts";
 import ContactSelect from "@/islands/ContactSelect.tsx";
 import type { Contact } from "@/domain/contacts/types.ts";
 import {
@@ -22,6 +25,8 @@ export interface ExpenseFormProps extends ExpenseFormOptions {
   multipart?: boolean;
   pdfProof?: string;
   disabled?: boolean;
+  busy?: boolean;
+  suggestedContact?: ContactFormInput;
 }
 
 export function expenseInputFromForm(form: FormData): ExpenseFormInput {
@@ -35,6 +40,22 @@ export function expenseInputFromForm(form: FormData): ExpenseFormInput {
     vatAmounts.length,
   );
   return {
+    details: {
+      ...emptyExpenseDetails(),
+      accountNumber: value("expense_accountNumber"),
+      iban: value("expense_iban"),
+      variableSymbol: value("expense_variableSymbol"),
+      constantSymbol: value("expense_constantSymbol"),
+      specificSymbol: value("expense_specificSymbol"),
+      items: form.getAll("item_description").map((_, index) => ({
+        description: String(form.getAll("item_description")[index] ?? ""),
+        quantity: String(form.getAll("item_quantity")[index] ?? ""),
+        unit: String(form.getAll("item_unit")[index] ?? ""),
+        unitPrice: String(form.getAll("item_unitPrice")[index] ?? ""),
+        vatRate: String(form.getAll("item_vatRate")[index] ?? ""),
+        totalAmount: String(form.getAll("item_totalAmount")[index] ?? ""),
+      })),
+    },
     contactId: value("contact_id"),
     documentType: value("document_type"),
     supplierName: value("supplier_name"),
@@ -58,6 +79,7 @@ export function expenseInputFromForm(form: FormData): ExpenseFormInput {
 
 export function expenseInputFromExpense(expense: Expense): ExpenseFormInput {
   return {
+    details: expense.details ?? emptyExpenseDetails(),
     contactId: expense.contactId ?? "",
     documentType: expense.documentType,
     supplierName: expense.supplierName,
@@ -103,144 +125,149 @@ export default function ExpenseForm(props: ExpenseFormProps) {
         </div>
       )}
 
-      <div class="grid gap-5 sm:grid-cols-2">
-        <label>
-          <span class="mb-2 block text-sm font-medium">Typ dokladu</span>
-          <select name="document_type" class={inputClass} required>
-            <option
-              value="INVOICE"
-              selected={props.values.documentType === "INVOICE"}
-            >
-              Přijatá faktura
-            </option>
-            <option
-              value="RECEIPT"
-              selected={props.values.documentType === "RECEIPT"}
-            >
-              Účtenka
-            </option>
-            <option
-              value="OTHER"
-              selected={props.values.documentType === "OTHER"}
-            >
-              Ostatní náklad
-            </option>
-          </select>
-        </label>
-        <label>
-          <span class="mb-2 block text-sm font-medium">Kategorie</span>
-          <select name="category_id" class={inputClass}>
-            <option value="">Bez kategorie</option>
-            {props.categories.map((category) => (
+      <fieldset disabled={props.busy} class="space-y-7">
+        <div class="grid gap-5 sm:grid-cols-2">
+          <label>
+            <span class="mb-2 block text-sm font-medium">Typ dokladu</span>
+            <select name="document_type" class={inputClass} required>
               <option
-                value={category.id}
-                selected={props.values.categoryId === category.id}
+                value="INVOICE"
+                selected={props.values.documentType === "INVOICE"}
               >
-                {category.name}
-                {category.isActive ? "" : " · neaktivní"}
+                Přijatá faktura
               </option>
-            ))}
-          </select>
-        </label>
-        <ContactSelect
-          contacts={props.contacts.map(({ id, name, archivedAt }) => ({
-            id,
-            name,
-            archived: archivedAt !== null,
-          }))}
-          initialValue={props.values.contactId}
-          organizationId={props.organizationId}
-          csrfToken={props.csrfToken}
-          initialSupplierName={props.values.supplierName}
+              <option
+                value="RECEIPT"
+                selected={props.values.documentType === "RECEIPT"}
+              >
+                Účtenka
+              </option>
+              <option
+                value="OTHER"
+                selected={props.values.documentType === "OTHER"}
+              >
+                Ostatní náklad
+              </option>
+            </select>
+          </label>
+          <label>
+            <span class="mb-2 block text-sm font-medium">Kategorie</span>
+            <select name="category_id" class={inputClass}>
+              <option value="">Bez kategorie</option>
+              {props.categories.map((category) => (
+                <option
+                  value={category.id}
+                  selected={props.values.categoryId === category.id}
+                >
+                  {category.name}
+                  {category.isActive ? "" : " · neaktivní"}
+                </option>
+              ))}
+            </select>
+          </label>
+          <ContactSelect
+            contacts={props.contacts.map(({ id, name, archivedAt }) => ({
+              id,
+              name,
+              archived: archivedAt !== null,
+            }))}
+            initialValue={props.values.contactId}
+            organizationId={props.organizationId}
+            csrfToken={props.csrfToken}
+            initialSupplierName={props.values.supplierName}
+            suggestedContact={props.suggestedContact}
+          />
+          <label>
+            <span class="mb-2 block text-sm font-medium">Číslo dokladu</span>
+            <input
+              name="supplier_invoice_number"
+              value={props.values.supplierInvoiceNumber}
+              maxlength={100}
+              class={inputClass}
+            />
+          </label>
+          <label>
+            <span class="mb-2 block text-sm font-medium">Datum vystavení</span>
+            <input
+              type="date"
+              name="issue_date"
+              value={props.values.issueDate}
+              class={inputClass}
+            />
+          </label>
+          <label>
+            <span class="mb-2 block text-sm font-medium">Datum plnění</span>
+            <input
+              type="date"
+              name="taxable_supply_date"
+              value={props.values.taxableSupplyDate}
+              class={inputClass}
+            />
+          </label>
+          <label>
+            <span class="mb-2 block text-sm font-medium">Datum splatnosti</span>
+            <input
+              type="date"
+              name="due_date"
+              value={props.values.dueDate}
+              class={inputClass}
+            />
+          </label>
+          <label>
+            <span class="mb-2 block text-sm font-medium">Datum úhrady</span>
+            <input
+              type="date"
+              name="payment_date"
+              value={props.values.paymentDate}
+              class={inputClass}
+            />
+          </label>
+          <label class="sm:col-span-2 sm:max-w-xs">
+            <span class="mb-2 block text-sm font-medium">Měna</span>
+            <input
+              name="currency"
+              value={props.values.currency}
+              maxlength={3}
+              required
+              class={inputClass}
+            />
+          </label>
+          <label class="sm:col-span-2">
+            <span class="mb-2 block text-sm font-medium">Popis nákladu</span>
+            <textarea
+              name="description"
+              maxlength={1000}
+              rows={3}
+              required
+              class={inputClass}
+            >
+              {props.values.description}
+            </textarea>
+          </label>
+          <label class="sm:col-span-2">
+            <span class="mb-2 block text-sm font-medium">Poznámka</span>
+            <textarea name="note" maxlength={5000} rows={4} class={inputClass}>
+              {props.values.note}
+            </textarea>
+          </label>
+        </div>
+
+        <ExpenseDetailsEditor initial={props.values.details} />
+
+        <ExpenseVatLinesEditor
+          initialLines={props.values.vatLines}
+          initialTotalAmount={props.values.totalAmount}
+          currency={props.values.currency}
         />
-        <label>
-          <span class="mb-2 block text-sm font-medium">Číslo dokladu</span>
-          <input
-            name="supplier_invoice_number"
-            value={props.values.supplierInvoiceNumber}
-            maxlength={100}
-            class={inputClass}
-          />
-        </label>
-        <label>
-          <span class="mb-2 block text-sm font-medium">Datum vystavení</span>
-          <input
-            type="date"
-            name="issue_date"
-            value={props.values.issueDate}
-            class={inputClass}
-          />
-        </label>
-        <label>
-          <span class="mb-2 block text-sm font-medium">Datum plnění</span>
-          <input
-            type="date"
-            name="taxable_supply_date"
-            value={props.values.taxableSupplyDate}
-            class={inputClass}
-          />
-        </label>
-        <label>
-          <span class="mb-2 block text-sm font-medium">Datum splatnosti</span>
-          <input
-            type="date"
-            name="due_date"
-            value={props.values.dueDate}
-            class={inputClass}
-          />
-        </label>
-        <label>
-          <span class="mb-2 block text-sm font-medium">Datum úhrady</span>
-          <input
-            type="date"
-            name="payment_date"
-            value={props.values.paymentDate}
-            class={inputClass}
-          />
-        </label>
-        <label class="sm:col-span-2 sm:max-w-xs">
-          <span class="mb-2 block text-sm font-medium">Měna</span>
-          <input
-            name="currency"
-            value={props.values.currency}
-            maxlength={3}
-            required
-            class={inputClass}
-          />
-        </label>
-        <label class="sm:col-span-2">
-          <span class="mb-2 block text-sm font-medium">Popis nákladu</span>
-          <textarea
-            name="description"
-            maxlength={1000}
-            rows={3}
-            required
-            class={inputClass}
-          >
-            {props.values.description}
-          </textarea>
-        </label>
-        <label class="sm:col-span-2">
-          <span class="mb-2 block text-sm font-medium">Poznámka</span>
-          <textarea name="note" maxlength={5000} rows={4} class={inputClass}>
-            {props.values.note}
-          </textarea>
-        </label>
-      </div>
 
-      <ExpenseVatLinesEditor
-        initialLines={props.values.vatLines}
-        initialTotalAmount={props.values.totalAmount}
-        currency={props.values.currency}
-      />
-
-      <button
-        type="submit"
-        disabled={props.disabled}
-        class="w-full rounded-xl bg-[#183e2a] px-5 py-3 font-semibold text-white hover:bg-[#23583b]"
-      >
-        {props.submitLabel}
-      </button>
+        <button
+          type="submit"
+          disabled={props.disabled}
+          class="w-full rounded-xl bg-[#183e2a] px-5 py-3 font-semibold text-white hover:bg-[#23583b]"
+        >
+          {props.submitLabel}
+        </button>
+      </fieldset>
     </form>
   );
 }

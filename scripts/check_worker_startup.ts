@@ -89,7 +89,13 @@ if (import.meta.main) {
       ) throw new Error(`Worker health contract failed (expected ${status})`);
     };
     await checkHealth(503); // The D1 schema does not exist yet.
-    for (const file of ["0001_schema.sql", "0002_integrity.sql"]) {
+    for (
+      const file of [
+        "0001_schema.sql",
+        "0002_integrity.sql",
+        "0003_expense_details.sql",
+      ]
+    ) {
       const sql = await Deno.readTextFile(
         new URL(`../migrations/d1/${file}`, import.meta.url),
       );
@@ -198,6 +204,61 @@ if (import.meta.main) {
     ).filter((value) => !value.startsWith("fakturomat_csrf="));
     const requestCookie = sessionCookies.join("; ") +
       `; fakturomat_csrf=${token}`;
+    const createdExpense = await mf.dispatchFetch(
+      `https://fakturomat.test/o/${org}/expenses/new`,
+      {
+        method: "POST",
+        headers: {
+          cookie: requestCookie,
+          origin: "https://fakturomat.test",
+          "content-type": "application/x-www-form-urlencoded",
+        },
+        body: new URLSearchParams({
+          csrf_token: token,
+          document_type: "INVOICE",
+          supplier_name: "Worker supplier",
+          description: "Imported service",
+          currency: "CZK",
+          total_amount: "121.00",
+          expense_accountNumber: "2114736912/2700",
+          expense_variableSymbol: "000123",
+          expense_constantSymbol: "0308",
+          expense_specificSymbol: "000456",
+          item_description: "Service item",
+          item_quantity: "1",
+          item_unit: "ks",
+          item_unitPrice: "100.00",
+          item_vatRate: "21",
+          item_totalAmount: "121.00",
+        }).toString(),
+        redirect: "manual",
+      },
+    );
+    const expenseLocation = createdExpense.headers.get("location");
+    if (createdExpense.status !== 303 || !expenseLocation) {
+      throw new Error(
+        `Worker expense creation failed: ${createdExpense.status} ${await createdExpense
+          .text()}`,
+      );
+    }
+    await createdExpense.body?.cancel();
+    const expensePath =
+      new URL(expenseLocation, "https://fakturomat.test").pathname;
+    for (const path of [expensePath, `${expensePath}/edit`]) {
+      const rendered = await mf.dispatchFetch(
+        `https://fakturomat.test${path}`,
+        { headers: { cookie: requestCookie } },
+      );
+      const body = await rendered.text();
+      if (
+        rendered.status !== 200 || !body.includes("Service item") ||
+        !body.includes("000123") || !body.includes("Doplnit s AI")
+      ) {
+        throw new Error(
+          `Worker expense details render failed: ${rendered.status}`,
+        );
+      }
+    }
     const issue = await mf.dispatchFetch(
       `https://fakturomat.test/o/${org}/invoices/${invoice}/issue`,
       {

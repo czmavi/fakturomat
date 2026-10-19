@@ -160,8 +160,13 @@ export async function buildImport(
   }
   statements.push(integrity);
   statements.push(
+    await Deno.readTextFile(
+      new URL("../migrations/d1/0003_expense_details.sql", import.meta.url),
+    ),
+  );
+  statements.push(
     "CREATE TABLE d1_migrations (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE, applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL);",
-    "INSERT INTO d1_migrations(name) VALUES ('0001_schema.sql'), ('0002_integrity.sql');",
+    "INSERT INTO d1_migrations(name) VALUES ('0001_schema.sql'), ('0002_integrity.sql'), ('0003_expense_details.sql');",
   );
   statements.push(
     "CREATE TABLE _import_checks (valid INTEGER CHECK (valid = 1));",

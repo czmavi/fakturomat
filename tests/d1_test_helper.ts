@@ -9,7 +9,13 @@ import type {
 export class TestD1 implements D1Database {
   readonly sqlite = new DatabaseSync(":memory:");
   constructor() {
-    for (const file of ["0001_schema.sql", "0002_integrity.sql"]) {
+    for (
+      const file of [
+        "0001_schema.sql",
+        "0002_integrity.sql",
+        "0003_expense_details.sql",
+      ]
+    ) {
       this.sqlite.exec(
         Deno.readTextFileSync(
           new URL(`../migrations/d1/${file}`, import.meta.url),

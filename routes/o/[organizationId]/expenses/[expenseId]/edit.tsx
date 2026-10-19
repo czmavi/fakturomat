@@ -1,7 +1,9 @@
+import ExpensePdfImport from "@/islands/ExpensePdfImport.tsx";
+import { D1ExpenseAttachmentRepository } from "@/repositories/expense_attachment_repository.ts";
 import { page } from "fresh";
 import { Head } from "fresh/runtime";
 import { define } from "@/utils.ts";
-import ExpenseForm, {
+import {
   type ExpenseFormOptions,
   expenseInputFromExpense,
   expenseInputFromForm,
@@ -19,6 +21,8 @@ import {
 interface PageData extends ExpenseFormOptions {
   values: ExpenseFormInput;
   error: string | null;
+  attachments: { id: string; filename: string }[];
+  autoExtract?: boolean;
 }
 
 export const handler = define.handlers<PageData>({
@@ -40,6 +44,15 @@ export const handler = define.handlers<PageData>({
         ctx.params.organizationId,
         ctx.state.user!.id,
       ),
+      attachments:
+        (await new D1ExpenseAttachmentRepository().listForExpenseForUser(
+          ctx.params.organizationId,
+          ctx.params.expenseId,
+          ctx.state.user!.id,
+        )).filter((file) => file.mimeType === "application/pdf").map((
+          { id, filename },
+        ) => ({ id, filename })),
+      autoExtract: ctx.url.searchParams.get("ai") === "1",
       values: expenseInputFromExpense(expense),
       error: null,
     });
@@ -56,6 +69,14 @@ export const handler = define.handlers<PageData>({
           ctx.params.organizationId,
           ctx.state.user!.id,
         ),
+        attachments:
+          (await new D1ExpenseAttachmentRepository().listForExpenseForUser(
+            ctx.params.organizationId,
+            ctx.params.expenseId,
+            ctx.state.user!.id,
+          )).filter((file) => file.mimeType === "application/pdf").map((
+            { id, filename },
+          ) => ({ id, filename })),
         values,
         error: message,
       }, { status });
@@ -109,7 +130,8 @@ export default define.page<typeof handler>(({ data, state, params }) => (
         <h1 class="mt-2 text-3xl font-semibold tracking-tight">
           Upravit náklad
         </h1>
-        <ExpenseForm
+        <ExpensePdfImport
+          expenseId={params.expenseId}
           {...data}
           organizationId={params.organizationId}
           csrfToken={state.csrfToken}

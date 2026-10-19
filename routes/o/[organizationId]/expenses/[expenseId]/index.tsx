@@ -1,3 +1,4 @@
+import { emptyExpenseDetails } from "@/domain/expenses/details.ts";
 import { page } from "fresh";
 import { Head } from "fresh/runtime";
 import { define } from "@/utils.ts";
@@ -90,6 +91,7 @@ function formatBytes(size: number): string {
 
 export default define.page<typeof handler>(({ data, params, state }) => {
   const expense = data.expense;
+  const details = expense.details ?? emptyExpenseDetails();
   const root = `/o/${params.organizationId}/expenses`;
   const vatBase = parseMoneyToMinorUnits(expense.vatBaseTotal);
   const vatAmount = parseMoneyToMinorUnits(expense.vatAmountTotal);
@@ -160,6 +162,12 @@ export default define.page<typeof handler>(({ data, params, state }) => {
               </p>
             </div>
             <a
+              href={`${root}/${expense.id}/edit?ai=1`}
+              class="rounded-xl bg-[#183e2a] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#23583b]"
+            >
+              Doplnit s AI
+            </a>
+            <a
               href={`${root}/${expense.id}/edit`}
               class="rounded-xl border border-[#bfc9c1] px-4 py-2.5 text-sm font-semibold hover:bg-[#f1f4f1]"
             >
@@ -194,6 +202,82 @@ export default define.page<typeof handler>(({ data, params, state }) => {
               value={dateLabel(expense.paymentDate)}
             />
           </dl>
+
+          <section class="mt-8 border-t border-[#e3e7e3] pt-7">
+            <h2 class="text-lg font-semibold">Platební údaje dodavatele</h2>
+            <dl class="mt-4 grid gap-5 sm:grid-cols-2">
+              <DetailItem label="Účet" value={details.accountNumber || null} />
+              <DetailItem label="IBAN" value={details.iban || null} />
+              <DetailItem
+                label="Variabilní symbol"
+                value={details.variableSymbol || null}
+              />
+              <DetailItem
+                label="Konstantní symbol"
+                value={details.constantSymbol || null}
+              />
+              <DetailItem
+                label="Specifický symbol"
+                value={details.specificSymbol || null}
+              />
+            </dl>
+          </section>
+          <section class="mt-8 border-t border-[#e3e7e3] pt-7">
+            <h2 class="text-lg font-semibold">Položky faktury</h2>
+            {details.items.length
+              ? (
+                <div class="mt-4 overflow-x-auto">
+                  <table class="w-full text-left text-sm">
+                    <thead>
+                      <tr class="border-b border-[#dce2dc]">
+                        {[
+                          "Popis",
+                          "Množství",
+                          "Jednotka",
+                          "Cena/jedn. bez DPH",
+                          "DPH",
+                          "Celkem s DPH",
+                        ].map((label) => (
+                          <th key={label} class="px-2 py-3">{label}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {details.items.map((item, index) => (
+                        <tr key={index} class="border-b border-[#e3e7e3]">
+                          <td class="px-2 py-3">{item.description}</td>
+                          <td class="px-2 py-3">{item.quantity || "—"}</td>
+                          <td class="px-2 py-3">{item.unit || "—"}</td>
+                          <td class="whitespace-nowrap px-2 py-3">
+                            {item.unitPrice
+                              ? `${
+                                formatMoneyForDisplay(item.unitPrice)
+                              } ${expense.currency}`
+                              : "—"}
+                          </td>
+                          <td class="whitespace-nowrap px-2 py-3">
+                            {item.vatRate ? `${item.vatRate} %` : "—"}
+                          </td>
+                          <td class="whitespace-nowrap px-2 py-3">
+                            {item.totalAmount
+                              ? `${
+                                formatMoneyForDisplay(item.totalAmount)
+                              } ${expense.currency}`
+                              : "—"}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )
+              : (
+                <p class="mt-2 text-sm text-[#667169]">
+                  Položky zatím nejsou vyplněné. Můžete je doplnit ručně nebo z
+                  PDF pomocí AI.
+                </p>
+              )}
+          </section>
 
           <div class="mt-8 border-t border-[#e3e7e3] pt-7">
             <div class="flex flex-wrap items-end justify-between gap-3">

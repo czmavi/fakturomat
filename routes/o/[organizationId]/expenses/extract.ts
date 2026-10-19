@@ -1,3 +1,8 @@
+import { D1ExpenseAttachmentRepository } from "@/repositories/expense_attachment_repository.ts";
+import { getObjectStorage } from "@/services/storage/storage_factory.ts";
+import { sha256Hex } from "@/services/storage/integrity.ts";
+import { D1ContactRepository } from "@/repositories/contact_repository.ts";
+import { matchExpenseSupplier } from "@/services/expense_supplier_service.ts";
 import { envValue } from "@/config/runtime.ts";
 import { define } from "@/utils.ts";
 import { D1OrganizationSettingsRepository } from "@/repositories/organization_settings_repository.ts";
@@ -25,7 +30,34 @@ export const handler = define.handlers({
       .findForUser(ctx.params.organizationId, ctx.state.user!.id);
     if (!settings) return respond({ error: "Firma není dostupná." }, 404);
     try {
-      const file = form.get("pdf");
+      let file = form.get("pdf");
+      const expenseId = String(form.get("expense_id") ?? "");
+      if (expenseId) {
+        const attachment = await new D1ExpenseAttachmentRepository()
+          .findForUser(
+            ctx.params.organizationId,
+            expenseId,
+            String(form.get("attachment_id") ?? ""),
+            ctx.state.user!.id,
+          );
+        if (!attachment) {
+          return respond({ error: "Příloha nákladu není dostupná." }, 404);
+        }
+        if (attachment.mimeType !== "application/pdf") {
+          throw new ExpensePdfError(
+            "Pro doplnění s AI vyberte uloženou PDF fakturu.",
+          );
+        }
+        const object = await getObjectStorage().get(attachment.storageKey);
+        if (!object || await sha256Hex(object.data) !== attachment.sha256) {
+          throw new ExpensePdfError(
+            "Původní soubor není dostupný nebo neprošel kontrolou integrity.",
+          );
+        }
+        file = new File([object.data.slice().buffer], attachment.filename, {
+          type: attachment.mimeType,
+        });
+      }
       if (!(file instanceof File)) {
         throw new ExpensePdfError("Vyberte PDF fakturu.");
       }
@@ -39,7 +71,15 @@ export const handler = define.handlers({
         ctx.state.user!.id,
         result.recipient,
       );
-      return respond({ ...result, proof });
+      const contacts = await new D1ContactRepository().listForUser({
+        organizationId: ctx.params.organizationId,
+        userId: ctx.state.user!.id,
+        search: "",
+        includeArchived: false,
+      });
+      result.values.contactId =
+        matchExpenseSupplier(result.supplier, contacts) ?? "";
+      return respond({ ...result, proof, contacts });
     } catch (error) {
       if (
         error instanceof ExpensePdfError ||

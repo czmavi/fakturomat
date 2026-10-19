@@ -1,3 +1,4 @@
+import { emptyExpenseDetails } from "@/domain/expenses/details.ts";
 import { money } from "@/database/d1.ts";
 import type { ExpenseAttachment } from "@/domain/expenses/attachment.ts";
 import type { Sql, TransactionSql } from "@/database/d1.ts";
@@ -12,6 +13,7 @@ import type {
 import { normalizeVatRate } from "@/domain/expenses/vat.ts";
 
 interface ExpenseRow {
+  invoice_details: string;
   id: string;
   organization_id: string;
   contact_id: string | null;
@@ -51,6 +53,10 @@ function dateString(value: string | Date | null): string | null {
 
 function summaryFromRow(row: ExpenseRow): ExpenseSummary {
   return {
+    details: {
+      ...emptyExpenseDetails(),
+      ...JSON.parse(row.invoice_details || "{}"),
+    },
     id: row.id,
     organizationId: row.organization_id,
     contactId: row.contact_id,
@@ -136,7 +142,7 @@ const SELECT_COLUMNS = `
     WHERE lines.organization_id = expenses.organization_id
       AND lines.expense_id = expenses.id
   ), 0) AS vat_amount_total,
-  expenses.note, expenses.created_at, expenses.updated_at
+  expenses.invoice_details, expenses.note, expenses.created_at, expenses.updated_at
 `;
 
 const JOINS = `
@@ -238,14 +244,16 @@ export class D1ExpenseRepository implements ExpenseRepository {
         INSERT INTO expenses (
           id, organization_id, contact_id, document_type, supplier_name,
           supplier_invoice_number, issue_date, taxable_supply_date, due_date,
-          payment_date, description, category_id, currency, total_amount, note
+          payment_date, description, category_id, currency, total_amount, note, invoice_details
         ) VALUES (
           ${input.id}, ${input.organizationId}, ${input.contactId},
           ${input.documentType}, ${input.supplierName},
           ${input.supplierInvoiceNumber}, ${input.issueDate},
           ${input.taxableSupplyDate}, ${input.dueDate}, ${input.paymentDate},
           ${input.description}, ${input.categoryId}, ${input.currency},
-          ${money(input.totalAmount)}, ${input.note}
+          ${money(input.totalAmount)}, ${input.note}, ${
+        JSON.stringify(input.details ?? emptyExpenseDetails())
+      }
         )
       `);
       if (input.attachment) {
@@ -294,6 +302,9 @@ export class D1ExpenseRepository implements ExpenseRepository {
           description = ${input.description}, category_id = ${input.categoryId},
           currency = ${input.currency}, total_amount = ${
         money(input.totalAmount)
+      },
+          invoice_details = ${
+        JSON.stringify(input.details ?? emptyExpenseDetails())
       },
           note = ${input.note}, updated_at = CAST(unixepoch('subsec') * 1000 AS INTEGER)
         WHERE id = ${input.id} AND organization_id = ${input.organizationId}

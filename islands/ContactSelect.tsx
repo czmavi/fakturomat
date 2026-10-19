@@ -1,3 +1,4 @@
+import type { ContactFormInput } from "@/domain/contacts/types.ts";
 import { useEffect, useRef, useState } from "preact/hooks";
 import { createPortal } from "preact/compat";
 import type { JSX } from "preact";
@@ -13,6 +14,7 @@ interface Props {
   csrfToken: string;
   required?: boolean;
   initialSupplierName?: string;
+  suggestedContact?: ContactFormInput;
 }
 
 const inputClass =
@@ -146,16 +148,27 @@ export default function ContactSelect(props: Props) {
               ))}
             </select>
           </label>
+          {props.suggestedContact && !selectedId && (
+            <p class="mt-3 text-sm text-[#667169]">
+              Dodavatel nebyl jednoznačně nalezen v kontaktech. Vyberte
+              existující kontakt nebo jej vytvořte z údajů faktury.
+            </p>
+          )}
           <button
             type="button"
             class="mt-3 rounded-lg text-sm font-semibold text-[#277a4c] hover:underline focus-visible:outline-2 focus-visible:outline-offset-4"
             onClick={() => {
-              setValues({ ...EMPTY_CONTACT, name: supplierName });
+              setValues(
+                props.suggestedContact ??
+                  { ...EMPTY_CONTACT, name: supplierName },
+              );
               setError(null);
               setOpen(true);
             }}
           >
-            + Vytvořit kontakt
+            {props.suggestedContact && !selectedId
+              ? "+ Vytvořit kontakt z faktury"
+              : "+ Vytvořit kontakt"}
           </button>
           <p role="status" class="mt-2 text-sm text-[#277a4c]">{notice}</p>
         </div>
