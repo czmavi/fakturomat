@@ -9,7 +9,19 @@ export interface Recipient {
   ico: string;
   dic: string;
 }
-export type CompanyIdentity = Pick<OrganizationSettings, "ico" | "dic">;
+export type CompanyIdentity =
+  & Pick<OrganizationSettings, "ico" | "dic">
+  & Partial<Pick<OrganizationSettings, "officialName">>;
+export type RecipientVerification = "identifier" | "name";
+
+function normalizeCompanyName(value: string): string {
+  return value.normalize("NFKC").toLocaleLowerCase("cs-CZ")
+    .replace(/[.,]/g, "")
+    .replace(/\s+/g, " ").trim()
+    .replace(/\bs\s*r\s*o$/, "sro")
+    .replace(/\ba\s*s$/, "as")
+    .replace(/\bz\s*s$/, "zs");
+}
 
 const identifier = (value: string | null) =>
   (value ?? "").replace(/\s/g, "").toUpperCase();
@@ -17,7 +29,7 @@ const identifier = (value: string | null) =>
 export function verifyRecipient(
   recipient: Recipient,
   company: CompanyIdentity,
-): void {
+): RecipientVerification {
   let matched = false;
   for (const field of ["ico", "dic"] as const) {
     const expected = identifier(company[field]);
@@ -31,11 +43,19 @@ export function verifyRecipient(
       matched = true;
     }
   }
-  if (!matched) {
-    throw new ExpensePdfError(
-      "Odběratele nelze ověřit. Na faktuře a v nastavení firmy musí být shodné IČO nebo DIČ.",
-    );
+  if (matched) return "identifier";
+  // A name may substitute only for identifiers absent from the invoice.
+  // A conflicting identifier above must never be overridden by a matching name.
+  if (!identifier(recipient.ico) && !identifier(recipient.dic)) {
+    const actualName = normalizeCompanyName(recipient.name);
+    const expectedName = normalizeCompanyName(company.officialName ?? "");
+    if (actualName && expectedName && actualName === expectedName) {
+      return "name";
+    }
   }
+  throw new ExpensePdfError(
+    "Odběratele nelze ověřit. Musí se shodovat IČO nebo DIČ; pokud na faktuře obě chybí, musí se shodovat celý název odběratele s oficiálním názvem firmy v nastavení.",
+  );
 }
 
 export async function readInvoicePdf(file: File): Promise<Uint8Array> {
@@ -99,7 +119,11 @@ function string(value: unknown): string {
 export function parseInvoiceResult(
   raw: unknown,
   company: CompanyIdentity,
-): { values: ExpenseFormInput; recipient: Recipient } {
+): {
+  values: ExpenseFormInput;
+  recipient: Recipient;
+  recipientVerification: RecipientVerification;
+} {
   const data = record(raw);
   if (data.isInvoice !== true) {
     throw new ExpensePdfError("PDF nebylo rozpoznáno jako faktura.");
@@ -110,7 +134,7 @@ export function parseInvoiceResult(
     ico: string(buyer.ico),
     dic: string(buyer.dic),
   };
-  verifyRecipient(recipient, company);
+  const recipientVerification = verifyRecipient(recipient, company);
   if (!Array.isArray(data.vatLines)) {
     throw new ExpensePdfError("Neplatný rozpis DPH.");
   }
@@ -134,7 +158,7 @@ export function parseInvoiceResult(
     }),
   };
   normalizeExpenseInput(values);
-  return { values, recipient };
+  return { values, recipient, recipientVerification };
 }
 
 export class ExpensePdfService {

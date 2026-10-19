@@ -261,3 +261,79 @@ Deno.test("Only a real abort or timeout is reported as a timeout", async () => {
     }
   }
 });
+
+Deno.test("Recipient without identifiers can match the full official name", async () => {
+  const companyByName = {
+    ...company,
+    officialName: "Example Development s.r.o.",
+  };
+  const buyer = { name: " EXAMPLE  Development s. r. o. ", ico: "", dic: "" };
+  assert(
+    verifyRecipient(buyer, companyByName) === "name",
+    "Name fallback failed",
+  );
+  const result = parseInvoiceResult(
+    { ...invoice, recipient: buyer },
+    companyByName,
+  );
+  assert(
+    result.recipientVerification === "name",
+    "Verification method missing",
+  );
+  assert(result.recipient.ico === "", "Identifier was invented");
+  for (
+    const name of [
+      "",
+      "Example",
+      "Example Development a.s.",
+      "Other Development s.r.o.",
+    ]
+  ) {
+    await rejects(() => verifyRecipient({ ...buyer, name }, companyByName));
+  }
+  await rejects(() =>
+    verifyRecipient({ ...buyer, ico: "87654321" }, companyByName)
+  );
+  await rejects(() =>
+    verifyRecipient({ ...buyer, dic: "CZ87654321" }, companyByName)
+  );
+  await rejects(() =>
+    verifyRecipient(buyer, { ...companyByName, officialName: "" })
+  );
+  await rejects(() =>
+    verifyRecipient({ ...buyer, ico: "12345678" }, {
+      ...companyByName,
+      ico: null,
+      dic: null,
+    })
+  );
+});
+
+Deno.test("Signed name-only PDF proof is rechecked against current official name on save", async () => {
+  const { withRuntime } = await import("@/config/runtime.ts");
+  const { testRuntime } = await import("./d1_test_helper.ts");
+  const env = testRuntime();
+  try {
+    await withRuntime(env, async () => {
+      const buyer = { name: "Example Development s. r. o.", ico: "", dic: "" };
+      const settings = {
+        ...company,
+        officialName: "Example Development s.r.o.",
+      };
+      const bytes = await readInvoicePdf(file);
+      const token = await createPdfProof(bytes, "org", "user", buyer);
+      await verifyPdfProof(token, bytes, "org", "user", settings);
+      await rejects(() =>
+        verifyPdfProof(token, bytes, "org", "user", {
+          ...settings,
+          officialName: "Other s.r.o.",
+        })
+      );
+      await rejects(() =>
+        verifyPdfProof(token, bytes, "other-org", "user", settings)
+      );
+    });
+  } finally {
+    env.DB.sqlite.close();
+  }
+});

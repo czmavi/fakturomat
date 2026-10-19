@@ -13,6 +13,7 @@ export default function ExpensePdfImport(props: ExpenseFormProps) {
   const [proof, setProof] = useState("");
   const [version, setVersion] = useState(0);
   const [recipient, setRecipient] = useState("");
+  const [verifiedByName, setVerifiedByName] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
   function selectFile(file: File | null) {
     setProof("");
@@ -72,6 +73,7 @@ export default function ExpensePdfImport(props: ExpenseFormProps) {
       setValues({ ...result.values, categoryId: props.values.categoryId });
       setVersion((value) => value + 1);
       setProof(result.proof);
+      setVerifiedByName(result.recipientVerification === "name");
       setRecipient(
         result.recipient.name || result.recipient.ico || result.recipient.dic,
       );
@@ -176,7 +178,13 @@ export default function ExpensePdfImport(props: ExpenseFormProps) {
         </button>
         {recipient && (
           <p role="status" class="mt-3 text-sm text-[#277a4c]">
-            Odběratel ověřen: {recipient}. PDF se připojí při uložení nákladu.
+            {verifiedByName
+              ? "Odběratel se shoduje podle názvu"
+              : "Odběratel ověřen podle IČO/DIČ"}: {recipient}.
+            {verifiedByName &&
+              " Na faktuře chybí IČO a DIČ odběratele; zkontrolujte prosím jeho údaje."}
+            {" "}
+            PDF se připojí při uložení nákladu.
           </p>
         )}
       </section>
