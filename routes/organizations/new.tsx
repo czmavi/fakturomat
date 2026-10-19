@@ -1,3 +1,4 @@
+import AresLookup from "@/islands/AresLookup.tsx";
 import { page } from "fresh";
 import { Head } from "fresh/runtime";
 import { define } from "@/utils.ts";
@@ -14,10 +15,26 @@ interface OrganizationFormData {
     type: string;
     officialName: string;
     displayName: string;
+    ico: string;
+    dic: string;
+    street: string;
+    city: string;
+    postalCode: string;
+    country: string;
   };
 }
 
-const EMPTY_VALUES = { type: "OSVC", officialName: "", displayName: "" };
+const EMPTY_VALUES = {
+  type: "OSVC",
+  officialName: "",
+  displayName: "",
+  ico: "",
+  dic: "",
+  street: "",
+  city: "",
+  postalCode: "",
+  country: "CZ",
+};
 
 export const handler = define.handlers<OrganizationFormData>({
   GET(ctx) {
@@ -33,6 +50,12 @@ export const handler = define.handlers<OrganizationFormData>({
       type: String(form.get("type") ?? ""),
       officialName: String(form.get("official_name") ?? ""),
       displayName: String(form.get("display_name") ?? ""),
+      ico: String(form.get("ico") ?? ""),
+      dic: String(form.get("dic") ?? ""),
+      street: String(form.get("street") ?? ""),
+      city: String(form.get("city") ?? ""),
+      postalCode: String(form.get("postal_code") ?? ""),
+      country: String(form.get("country") ?? "CZ"),
     };
 
     if (!isValidCsrfToken(ctx.state.csrfToken, form.get("csrf_token"))) {
@@ -78,7 +101,7 @@ export default define.page<typeof handler>(({ data, state }) => (
           Základní údaje
         </h1>
         <p class="mt-3 text-sm leading-6 text-[#667169]">
-          Podrobné fakturační údaje a bankovní účty doplníte v další etapě.
+          Údaje vyplňte ručně nebo je načtěte z ARES podle IČO.
         </p>
 
         {data.error && (
@@ -92,6 +115,17 @@ export default define.page<typeof handler>(({ data, state }) => (
 
         <form method="post" class="mt-7 space-y-5">
           <input type="hidden" name="csrf_token" value={state.csrfToken} />
+          <label class="block">
+            <span class="mb-2 block text-sm font-medium">IČO</span>
+            <input
+              name="ico"
+              value={data.values.ico}
+              maxlength={8}
+              inputmode="numeric"
+              class="w-full rounded-xl border border-[#cad2cb] px-4 py-3"
+            />
+          </label>
+          <AresLookup organization />
           <label class="block">
             <span class="mb-2 block text-sm font-medium">Typ subjektu</span>
             <select
@@ -140,6 +174,24 @@ export default define.page<typeof handler>(({ data, state }) => (
               Krátký název použitý v přepínači subjektů.
             </span>
           </label>
+          {([
+            ["dic", "DIČ", "dic", 20],
+            ["street", "Ulice a číslo", "street", 200],
+            ["city", "Město", "city", 120],
+            ["postal_code", "PSČ", "postalCode", 20],
+            ["country", "Země (ISO kód)", "country", 2],
+          ] as const).map(([name, label, key, max]) => (
+            <label class="block" key={name}>
+              <span class="mb-2 block text-sm font-medium">{label}</span>
+              <input
+                name={name}
+                value={data.values[key]}
+                maxlength={max}
+                required={name === "country"}
+                class="w-full rounded-xl border border-[#cad2cb] px-4 py-3 outline-none focus:border-[#277a4c]"
+              />
+            </label>
+          ))}
           <button
             type="submit"
             class="w-full rounded-xl bg-[#183e2a] px-4 py-3 font-semibold text-white hover:bg-[#23583b] focus:outline-none focus:ring-3 focus:ring-[#b9ddc8]"

@@ -71,11 +71,49 @@ if (import.meta.main) {
   }));
   try {
     const db = await mf.getD1Database("DB");
+    const checkHealth = async (status: number) => {
+      const response = await mf.dispatchFetch(
+        "https://fakturomat.test/health",
+        {
+          redirect: "manual",
+        },
+      );
+      if (
+        response.status !== status ||
+        response.headers.get("content-type") !== "application/json" ||
+        response.headers.get("cache-control") !== "no-store" ||
+        response.headers.has("set-cookie") ||
+        response.headers.has("location") ||
+        await response.text() !==
+          JSON.stringify({ status: status === 200 ? "ok" : "error" })
+      ) throw new Error(`Worker health contract failed (expected ${status})`);
+    };
+    await checkHealth(503); // The D1 schema does not exist yet.
     for (const file of ["0001_schema.sql", "0002_integrity.sql"]) {
       const sql = await Deno.readTextFile(
         new URL(`../migrations/d1/${file}`, import.meta.url),
       );
       for (const statement of splitSql(sql)) await db.prepare(statement).run();
+    }
+    await checkHealth(200);
+    for (
+      const path of [
+        "/dashboard",
+        "/templates",
+        "/o/10000000-0000-4000-8000-000000000001/dashboard",
+      ]
+    ) {
+      const response = await mf.dispatchFetch(
+        `https://fakturomat.test${path}`,
+        { redirect: "manual" },
+      );
+      if (
+        response.status < 300 || response.status >= 400 ||
+        !response.headers.get("location")?.endsWith("/login")
+      ) {
+        throw new Error(`Anonymous access protection failed: ${path}`);
+      }
+      await response.body?.cancel();
     }
     const id = crypto.randomUUID();
     const password = "worker-test-password";

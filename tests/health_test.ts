@@ -45,7 +45,10 @@ Deno.test("GET /health is public, uncached, ignores cookies and does not write",
   const before = env.DB.sqlite.prepare("SELECT total_changes() AS n").get()?.n;
   try {
     for (
-      const headers of [{}, { cookie: "fakturomat.session_token=invalid" }]
+      const headers of [
+        new Headers(),
+        new Headers({ cookie: "fakturomat.session_token=invalid" }),
+      ]
     ) {
       await check(
         await withRuntime(

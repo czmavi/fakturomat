@@ -1,3 +1,4 @@
+import AresLookup from "@/islands/AresLookup.tsx";
 import type { Contact, ContactFormInput } from "@/domain/contacts/types.ts";
 import type { JSX } from "preact";
 
@@ -122,6 +123,7 @@ export default function ContactForm(props: ContactFormProps) {
               class={inputClass}
             />
           </label>
+          <AresLookup />
           <label class="sm:col-span-2">
             <span class="mb-2 block text-sm font-medium">Ulice a číslo</span>
             <input

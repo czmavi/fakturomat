@@ -1,6 +1,7 @@
 import type { Sql } from "@/database/d1.ts";
 import { getDb } from "@/database/client.ts";
 import type {
+  OrganizationBillingInput,
   OrganizationRole,
   OrganizationSummary,
   OrganizationType,
@@ -20,13 +21,15 @@ export interface OrganizationRepository {
     organizationId: string,
     userId: string,
   ): Promise<OrganizationSummary | null>;
-  createWithOwner(input: {
-    id: string;
-    type: OrganizationType;
-    officialName: string;
-    displayName: string;
-    ownerUserId: string;
-  }): Promise<OrganizationSummary>;
+  createWithOwner(
+    input: OrganizationBillingInput & {
+      id: string;
+      type: OrganizationType;
+      officialName: string;
+      displayName: string;
+      ownerUserId: string;
+    },
+  ): Promise<OrganizationSummary>;
 }
 
 function toOrganization(row: OrganizationRow): OrganizationSummary {
@@ -80,21 +83,29 @@ export class D1OrganizationRepository implements OrganizationRepository {
     return rows[0] ? toOrganization(rows[0]) : null;
   }
 
-  async createWithOwner(input: {
-    id: string;
-    type: OrganizationType;
-    officialName: string;
-    displayName: string;
-    ownerUserId: string;
-  }): Promise<OrganizationSummary> {
+  async createWithOwner(
+    input: OrganizationBillingInput & {
+      id: string;
+      type: OrganizationType;
+      officialName: string;
+      displayName: string;
+      ownerUserId: string;
+    },
+  ): Promise<OrganizationSummary> {
     await this.sql.begin((transaction) => {
       transaction.queue(transaction`
-        INSERT INTO organizations (id, type, official_name, display_name)
+        INSERT INTO organizations (id, type, official_name, display_name, ico, dic, street, city, postal_code, country)
         VALUES (
           ${input.id},
           ${input.type},
           ${input.officialName},
-          ${input.displayName}
+          ${input.displayName},
+          ${input.ico || null},
+          ${input.dic || null},
+          ${input.street || null},
+          ${input.city || null},
+          ${input.postalCode || null},
+          ${input.country ?? "CZ"}
         )
       `);
       transaction.queue(transaction`
