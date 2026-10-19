@@ -5,6 +5,7 @@ import { emptyExpenseDetails } from "./details.ts";
 export function mergeExpenseExtraction(
   current: ExpenseFormInput,
   extracted: ExpenseFormInput,
+  preserveMissing = true,
 ): ExpenseFormInput {
   const result = { ...current, ...extracted };
   for (
@@ -19,14 +20,18 @@ export function mergeExpenseExtraction(
       "totalAmount",
     ] as const
   ) {
-    if (!extracted[key]) result[key] = current[key];
+    if (preserveMissing && !extracted[key]) result[key] = current[key];
   }
   result.categoryId = current.categoryId;
   result.paymentDate = current.paymentDate;
   result.note = current.note;
   result.contactId = current.contactId || extracted.contactId;
-  if (!extracted.vatLines.length) result.vatLines = current.vatLines;
-  const before = current.details ?? emptyExpenseDetails();
+  if (preserveMissing && !extracted.vatLines.length) {
+    result.vatLines = current.vatLines;
+  }
+  const before = preserveMissing
+    ? current.details ?? emptyExpenseDetails()
+    : emptyExpenseDetails();
   const incoming = extracted.details ?? emptyExpenseDetails();
   result.details = {
     items: incoming.items.length ? incoming.items : before.items,

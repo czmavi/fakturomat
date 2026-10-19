@@ -1,3 +1,4 @@
+import type { ItemTotalCheck } from "@/services/expense_import_validation.ts";
 import {
   assignInvoiceFile,
   prepareInvoiceFile,
@@ -34,6 +35,9 @@ export default function ExpensePdfImport(
     }
   }, []);
   const [values, setValues] = useState(props.values);
+  const [itemTotalCheck, setItemTotalCheck] = useState<ItemTotalCheck | null>(
+    null,
+  );
   const [warnings, setWarnings] = useState<string[]>([]);
   const [error, setError] = useState(props.error);
   const [busy, setBusy] = useState(false);
@@ -52,6 +56,7 @@ export default function ExpensePdfImport(
     setProof("");
     setRecipient("");
     setWarnings([]);
+    setItemTotalCheck(null);
     setError(null);
     setSelectedFile(null);
     if (fileInput.current) assignInvoiceFile(fileInput.current, null);
@@ -99,6 +104,7 @@ export default function ExpensePdfImport(
     setProof("");
     setRecipient("");
     setWarnings([]);
+    setItemTotalCheck(null);
     try {
       const form = new FormData();
       form.set("csrf_token", props.csrfToken);
@@ -124,7 +130,14 @@ export default function ExpensePdfImport(
       if (!response.ok) {
         throw new Error(result.error ?? "Doklad se nepodařilo zpracovat.");
       }
-      setValues(mergeExpenseExtraction(current, result.values));
+      setValues(
+        mergeExpenseExtraction(
+          current,
+          result.values,
+          Boolean(props.expenseId),
+        ),
+      );
+      setItemTotalCheck(result.itemTotalCheck ?? null);
       setWarnings(result.warnings ?? []);
       setSuggestedContact(
         result.values.contactId || current.contactId
@@ -288,6 +301,18 @@ export default function ExpensePdfImport(
         {preparing && (
           <p role="status" class="mt-3 text-sm text-[#277a4c]">
             Připravuji soubor; převod HEIC může chvíli trvat…
+          </p>
+        )}
+        {itemTotalCheck && (
+          <p
+            role={itemTotalCheck.status === "match" ? "status" : "alert"}
+            class={`mt-3 rounded-lg p-3 text-sm ${
+              itemTotalCheck.status === "match"
+                ? "bg-green-50 text-[#277a4c]"
+                : "bg-amber-50 text-[#8a4f15]"
+            }`}
+          >
+            Kontrola při načtení: {itemTotalCheck.message}
           </p>
         )}
         {warnings.length > 0 && (

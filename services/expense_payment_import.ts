@@ -61,11 +61,12 @@ export function prepareImportedPayment(
     };
   }
   return {
-    ...input,
+    accountNumber: "",
+    iban: "",
     warnings: [
       (local && international
-        ? "Číslo účtu a IBAN načtené AI označují různé účty. Před uložením opravte platební údaje podle faktury; žádný účet nebyl automaticky vybrán."
-        : "Platební účet načtený AI není platný. Faktura je načtená; před uložením opravte účet/IBAN podle PDF, případně obě pole vymažte a doplňte později.") +
+        ? "Číslo účtu a IBAN načtené AI označují různé účty. Obě pole zůstala prázdná; doplňte je podle dokladu."
+        : "Platební účet načtený AI není platný. Pole účtu a IBANu zůstala prázdná; doplňte je podle dokladu.") +
       original,
     ],
   };

@@ -202,3 +202,17 @@ Deno.test("Expense details survive create, detail, edit and update with tenant i
     env.DB.sqlite.close();
   }
 });
+
+Deno.test("A new import leaves missing fields blank instead of using previous defaults", () => {
+  const current = { ...input, currency: "CZK", totalAmount: "100", details };
+  const incoming = {
+    ...input,
+    currency: "",
+    totalAmount: "",
+    details: emptyExpenseDetails(),
+    vatLines: [],
+  };
+  const merged = mergeExpenseExtraction(current, incoming, false);
+  assert(merged.currency === "" && merged.totalAmount === "");
+  assert(merged.details?.iban === "" && merged.details.items.length === 0);
+});

@@ -34,6 +34,14 @@ const invoice = {
   description: "Hosting",
   currency: "CZK",
   totalAmount: "1210.00",
+  items: [{
+    description: "Hosting",
+    quantity: "1",
+    unit: "ks",
+    unitPrice: "1000",
+    vatRate: "21",
+    totalAmount: "1210",
+  }],
   vatLines: [{ vatRate: "21", baseAmount: "1000.00", vatAmount: "210.00" }],
 };
 const file = new File(["%PDF-1.7\ntest"], "invoice.pdf", {
@@ -73,18 +81,22 @@ Deno.test("PDF extraction maps validated fields without inferring payment or con
   await rejects(() =>
     parseInvoiceResult({ ...invoice, isInvoice: false }, company)
   );
-  await rejects(() =>
-    parseInvoiceResult({ ...invoice, issueDate: "2026-02-30" }, company)
-  );
-  await rejects(() =>
-    parseInvoiceResult({ ...invoice, totalAmount: "invalid" }, company)
-  );
-  await rejects(() =>
-    parseInvoiceResult({ ...invoice, supplierName: 123 }, company)
-  );
-  await rejects(() =>
-    parseInvoiceResult({ ...invoice, vatLines: [{}] }, company)
-  );
+  for (
+    const [field, invalid] of [["issueDate", "2026-02-30"], [
+      "totalAmount",
+      "invalid",
+    ], ["supplierName", 123]] as const
+  ) {
+    const partial = parseInvoiceResult(
+      { ...invoice, [field]: invalid },
+      company,
+    );
+    assert(partial.values[field] === "", `${field} was not cleared`);
+    assert(partial.warnings.length > 0, "Missing field warning");
+    assert(partial.values.description === "Hosting", "Valid fields lost");
+  }
+  const vat = parseInvoiceResult({ ...invoice, vatLines: [{}] }, company);
+  assert(vat.values.vatLines[0].vatRate === "", "Invalid VAT retained");
 });
 
 Deno.test("PDF validates type, size and signature before API call", async () => {
@@ -375,7 +387,7 @@ Deno.test("PDF VAT percentage notation is normalized before validation and form 
   }
 });
 
-Deno.test("PDF VAT normalization does not guess malformed or missing rates", async () => {
+Deno.test("PDF VAT normalization clears malformed or missing rates without losing other values", () => {
   for (
     const vatRate of [
       "",
@@ -389,12 +401,19 @@ Deno.test("PDF VAT normalization does not guess malformed or missing rates", asy
       "osvobozeno",
     ]
   ) {
-    await rejects(() =>
-      parseInvoiceResult({
-        ...invoice,
-        vatLines: [{ ...invoice.vatLines[0], vatRate }],
-      }, company)
+    const result = parseInvoiceResult({
+      ...invoice,
+      vatLines: [{ ...invoice.vatLines[0], vatRate }],
+    }, company);
+    assert(
+      result.values.vatLines[0].vatRate === "",
+      "Invalid VAT rate retained",
     );
+    assert(
+      result.values.vatLines[0].baseAmount === "1000.00",
+      "Valid VAT base lost",
+    );
+    assert(result.warnings.length > 0, "Missing warning");
   }
 });
 
@@ -417,7 +436,7 @@ Deno.test("PDF import repairs an invalid IBAN only from a checksum-valid domesti
   assert(result.values.details.specificSymbol === "32825", "Symbol changed");
 });
 
-Deno.test("PDF import preserves invalid or conflicting accounts for review but saving rejects them", async () => {
+Deno.test("PDF import leaves invalid or conflicting accounts empty and retains valid invoice fields", async () => {
   const { normalizeExpenseInput } = await import(
     "@/services/expense_service.ts"
   );
@@ -438,13 +457,13 @@ Deno.test("PDF import preserves invalid or conflicting accounts for review but s
       },
     }, company);
     assert(
-      result.values.details?.iban === account.iban &&
-        result.values.details.accountNumber === account.accountNumber,
-      "Ambiguous payment changed",
+      result.values.details?.iban === "" &&
+        result.values.details.accountNumber === "",
+      "Ambiguous payment was not cleared",
     );
     assert(result.warnings.length === 1, "Missing review warning");
     assert(result.values.vatLines[0].vatRate === "21", "Invoice data lost");
-    await rejects(() => normalizeExpenseInput(result.values));
+    normalizeExpenseInput(result.values);
   }
 });
 
@@ -541,4 +560,194 @@ Deno.test("Invoice images are sent as high-detail image inputs, not PDF files", 
       "Image extraction failed",
     );
   }
+});
+
+const lineItem = {
+  description: "Hosting",
+  quantity: "1",
+  unit: "ks",
+  unitPrice: "1000",
+  vatRate: "21 %",
+  totalAmount: "1210",
+};
+
+Deno.test("Currency aliases normalize before display and invalid fields do not discard items", () => {
+  for (const currency of ["Kč", " Kč ", "kc", "czk"]) {
+    const result = parseInvoiceResult({
+      ...invoice,
+      currency,
+      items: [lineItem],
+    }, company);
+    assert(result.values.currency === "CZK", "Currency alias not normalized");
+    assert(
+      result.itemTotalCheck.status === "match",
+      "Correct sum not confirmed",
+    );
+  }
+  const result = parseInvoiceResult({
+    ...invoice,
+    currency: "???",
+    dueDate: "yesterday",
+    items: [{ ...lineItem, quantity: "unknown", vatRate: "broken" }],
+    payment: { variableSymbol: "abc" },
+  }, company);
+  assert(
+    result.values.currency === "" && result.values.dueDate === "",
+    "Bad fields retained",
+  );
+  assert(
+    result.values.details?.items[0].description === "Hosting",
+    "Item discarded",
+  );
+  assert(
+    result.values.details.items[0].quantity === "" &&
+      result.values.details.items[0].vatRate === "",
+    "Bad item fields retained",
+  );
+  assert(
+    result.values.details.items[0].totalAmount === "1210.00",
+    "Valid item total lost",
+  );
+  assert(
+    result.values.details.variableSymbol === "",
+    "Invalid symbol retained",
+  );
+  assert(result.warnings.length >= 5, "Not all failures reported");
+});
+
+Deno.test("Item reconciliation excludes explicit signed rounding and never tolerates unexplained discrepancies", () => {
+  for (
+    const [totalAmount, roundingAmount] of [["1210.00", ""], [
+      "1210.49",
+      "+0.49",
+    ], ["1209.51", "-0,49"]]
+  ) {
+    const result = parseInvoiceResult({
+      ...invoice,
+      items: [lineItem],
+      totalAmount,
+      roundingAmount,
+    }, company);
+    assert(
+      result.itemTotalCheck.status === "match",
+      `Rounding failed: ${roundingAmount}`,
+    );
+  }
+  for (const totalAmount of ["1210.01", "1211.00", "1500"]) {
+    const result = parseInvoiceResult({
+      ...invoice,
+      items: [lineItem],
+      totalAmount,
+    }, company);
+    assert(result.itemTotalCheck.status === "mismatch", "Discrepancy hidden");
+    assert(
+      result.itemTotalCheck.message.includes("Rozdíl"),
+      "Difference missing",
+    );
+    assert(
+      result.values.details?.items.length === 1,
+      "Mismatch discarded item",
+    );
+  }
+  const rounded = parseInvoiceResult({
+    ...invoice,
+    totalAmount: "1210.40",
+    items: [lineItem, {
+      ...lineItem,
+      description: "Haléřové vyrovnání",
+      totalAmount: "0.40",
+    }],
+  }, company);
+  assert(
+    rounded.values.details?.items.length === 1 &&
+      rounded.itemTotalCheck.status === "match",
+    "Rounding counted as an item",
+  );
+  const badRounding = parseInvoiceResult({
+    ...invoice,
+    items: [lineItem],
+    roundingAmount: "100",
+  }, company);
+  assert(
+    badRounding.itemTotalCheck.status === "unavailable",
+    "Large discrepancy disguised as rounding",
+  );
+});
+
+Deno.test("Incomplete photographed invoice retains its item and reports missing totals", () => {
+  // The supplied photo is page 1/2 and prints a net price, not a grand total.
+  const result = parseInvoiceResult({
+    ...invoice,
+    currency: "",
+    totalAmount: "",
+    vatLines: [],
+    items: [{
+      ...lineItem,
+      description: "Záloha na vozidlo",
+      unitPrice: "2 078 000,83",
+      totalAmount: "",
+    }],
+  }, company);
+  assert(
+    result.values.currency === "" && result.values.totalAmount === "",
+    "Missing totals invented",
+  );
+  assert(
+    result.values.details?.items[0].unitPrice === "2078000.83",
+    "Printed net price lost",
+  );
+  assert(
+    result.values.details.items[0].totalAmount === "",
+    "Gross line price invented",
+  );
+  assert(
+    result.itemTotalCheck.status === "unavailable",
+    "Incomplete invoice reported as reconciled",
+  );
+});
+
+Deno.test("Item reconciliation uses exact minor units and detects missing or malformed lines", () => {
+  const precise = parseInvoiceResult({
+    ...invoice,
+    totalAmount: "0.30",
+    items: [{ ...lineItem, totalAmount: "0.1" }, {
+      ...lineItem,
+      totalAmount: "0.2",
+    }],
+  }, company);
+  assert(
+    precise.itemTotalCheck.status === "match",
+    "Floating point comparison used",
+  );
+  for (
+    const items of [[], null, [lineItem, null], [{
+      ...lineItem,
+      totalAmount: "broken",
+    }]]
+  ) {
+    const result = parseInvoiceResult({ ...invoice, items }, company);
+    assert(
+      result.itemTotalCheck.status === "unavailable",
+      "Incomplete item sum accepted",
+    );
+  }
+});
+
+Deno.test("Repeated rounding is excluded once and unknown ISO-like currency is not guessed", () => {
+  const result = parseInvoiceResult({
+    ...invoice,
+    currency: "XYZ",
+    totalAmount: "1210.50",
+    roundingAmount: "+0,50",
+    items: [lineItem, {
+      ...lineItem,
+      description: "Zaokrouhlení",
+      totalAmount: "0.5",
+    }],
+  }, company);
+  assert(result.values.currency === "", "Unknown currency accepted");
+  assert(
+    result.itemTotalCheck.status === "match",
+    "Rounding counted twice or formatting mismatch",
+  );
 });
