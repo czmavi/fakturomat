@@ -1,3 +1,4 @@
+import { envValue } from "@/config/runtime.ts";
 import { define } from "@/utils.ts";
 import { D1OrganizationSettingsRepository } from "@/repositories/organization_settings_repository.ts";
 import { isValidCsrfToken } from "@/services/csrf_service.ts";
@@ -29,8 +30,8 @@ export const handler = define.handlers({
         throw new ExpensePdfError("Vyberte PDF fakturu.");
       }
       const result = await new ExpensePdfService({
-        apiKey: Deno.env.get("OPENAI_API_KEY") ?? "",
-        model: Deno.env.get("OPENAI_EXPENSE_MODEL")?.trim() || "gpt-4.1-mini",
+        apiKey: envValue("OPENAI_API_KEY") ?? "",
+        model: envValue("OPENAI_EXPENSE_MODEL")?.trim() || "gpt-4.1-mini",
       }).extract(file, settings);
       const proof = await createPdfProof(
         await readInvoicePdf(file),
@@ -44,7 +45,14 @@ export const handler = define.handlers({
         error instanceof ExpensePdfError ||
         error instanceof ExpenseValidationError
       ) return respond({ error: error.message }, 422);
-      throw error;
+      console.error(
+        "Expense PDF extraction failed",
+        error instanceof Error ? error.name : "UnknownError",
+      );
+      return respond({
+        error:
+          "Fakturu se nepodařilo načíst kvůli chybě serveru. Zkuste to znovu nebo soubor odeberte a vyplňte náklad ručně.",
+      }, 500);
     }
   },
 });

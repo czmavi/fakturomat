@@ -7,11 +7,32 @@ export default function ExpensePdfImport(props: ExpenseFormProps) {
   const [values, setValues] = useState(props.values);
   const [error, setError] = useState(props.error);
   const [busy, setBusy] = useState(false);
-  const [hasFile, setHasFile] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const dragDepth = useRef(0);
   const [proof, setProof] = useState("");
   const [version, setVersion] = useState(0);
   const [recipient, setRecipient] = useState("");
   const fileInput = useRef<HTMLInputElement>(null);
+  function selectFile(file: File | null) {
+    setProof("");
+    setRecipient("");
+    setError(null);
+    if (
+      file &&
+      (file.size === 0 || file.size > 20 * 1024 * 1024 ||
+        !/\.pdf$/i.test(file.name) ||
+        (file.type && file.type !== "application/pdf"))
+    ) {
+      setError("Vyberte jeden PDF soubor o velikosti nejvýše 20 MB.");
+      setSelectedFile(null);
+      if (fileInput.current) fileInput.current.value = "";
+      return;
+    }
+    setSelectedFile(file);
+    if (!file && fileInput.current) fileInput.current.value = "";
+  }
+
   async function extract() {
     const file = fileInput.current?.files?.[0];
     if (!file) {
@@ -34,6 +55,16 @@ export default function ExpensePdfImport(props: ExpenseFormProps) {
         `/o/${props.organizationId}/expenses/extract`,
         { method: "POST", body: form },
       );
+      if (response.redirected || response.status === 401) {
+        throw new Error(
+          "Přihlášení vypršelo. Přihlaste se znovu a načtěte fakturu.",
+        );
+      }
+      if (!response.headers.get("content-type")?.includes("application/json")) {
+        throw new Error(
+          "Server nemohl fakturu zpracovat. Zkuste to znovu nebo soubor odeberte a vyplňte náklad ručně.",
+        );
+      }
       const result = await response.json();
       if (!response.ok) {
         throw new Error(result.error ?? "PDF se nepodařilo zpracovat.");
@@ -62,25 +93,82 @@ export default function ExpensePdfImport(props: ExpenseFormProps) {
           PDF odešleme do OpenAI a ověříme odběratele vůči vybrané firmě. Údaje
           před uložením zkontrolujte.
         </p>
-        <input
-          ref={fileInput}
-          type="file"
-          name="pdf"
-          form="new-expense"
-          accept="application/pdf,.pdf"
-          disabled={busy}
-          class="mt-4 block w-full text-sm"
-          aria-label="PDF faktura"
-          onChange={() => {
-            setHasFile(Boolean(fileInput.current?.files?.length));
-            setProof("");
-            setRecipient("");
-            setError(null);
+        <div
+          class={`mt-4 rounded-xl border-2 border-dashed p-5 transition-colors ${
+            dragging
+              ? "border-[#277a4c] bg-[#e5f3e9]"
+              : "border-[#a9bcae] bg-white"
+          }`}
+          onDragEnter={(event) => {
+            event.preventDefault();
+            if (!busy) {
+              dragDepth.current++;
+              setDragging(true);
+            }
           }}
-        />
+          onDragOver={(event) => {
+            event.preventDefault();
+            if (event.dataTransfer) {
+              event.dataTransfer.dropEffect = busy ? "none" : "copy";
+            }
+          }}
+          onDragLeave={(event) => {
+            event.preventDefault();
+            dragDepth.current = Math.max(0, dragDepth.current - 1);
+            if (!dragDepth.current) setDragging(false);
+          }}
+          onDrop={(event) => {
+            event.preventDefault();
+            dragDepth.current = 0;
+            setDragging(false);
+            if (busy || !event.dataTransfer) return;
+            const files = event.dataTransfer.files;
+            if (files.length !== 1) {
+              setError("Přetáhněte prosím právě jeden PDF soubor.");
+              return;
+            }
+            // Keep the actual input populated so the PDF is submitted with the expense.
+            if (fileInput.current) fileInput.current.files = files;
+            selectFile(files[0]);
+          }}
+        >
+          <p class="font-semibold text-[#183e2a]">Přetáhněte PDF fakturu sem</p>
+          <p class="mt-1 text-sm text-[#667169]">
+            nebo klikněte na tlačítko Vybrat soubor. Maximálně 20 MB.
+          </p>
+          <input
+            ref={fileInput}
+            type="file"
+            name="pdf"
+            form="new-expense"
+            accept="application/pdf,.pdf"
+            disabled={busy}
+            class="mt-4 block w-full rounded-lg text-sm text-[#667169] file:mr-4 file:cursor-pointer file:rounded-xl file:border-0 file:bg-[#183e2a] file:px-4 file:py-3 file:font-semibold file:text-white hover:file:bg-[#23583b] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#277a4c] disabled:opacity-50"
+            aria-label="Vybrat PDF fakturu"
+            onChange={() => selectFile(fileInput.current?.files?.[0] ?? null)}
+          />
+          {selectedFile && (
+            <div class="mt-3 flex flex-wrap items-center justify-between gap-3">
+              <p role="status" class="break-all text-sm text-[#183e2a]">
+                {selectedFile.name} ·{" "}
+                {(selectedFile.size / 1024 / 1024).toLocaleString("cs-CZ", {
+                  maximumFractionDigits: 2,
+                })} MB
+              </p>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => selectFile(null)}
+                class="rounded-lg px-3 py-2 text-sm font-semibold text-[#962f25] hover:bg-[#fff5f3] disabled:opacity-50"
+              >
+                Odebrat soubor
+              </button>
+            </div>
+          )}
+        </div>
         <button
           type="button"
-          disabled={busy}
+          disabled={busy || !selectedFile}
           onClick={extract}
           class="mt-4 rounded-xl bg-[#183e2a] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
         >
@@ -100,7 +188,7 @@ export default function ExpensePdfImport(props: ExpenseFormProps) {
         formId="new-expense"
         multipart
         pdfProof={proof}
-        disabled={busy || (hasFile && !proof)}
+        disabled={busy || (Boolean(selectedFile) && !proof)}
       />
     </>
   );
