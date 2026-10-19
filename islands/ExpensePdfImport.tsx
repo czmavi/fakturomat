@@ -29,6 +29,7 @@ export default function ExpensePdfImport(
     }
   }, []);
   const [values, setValues] = useState(props.values);
+  const [warnings, setWarnings] = useState<string[]>([]);
   const [error, setError] = useState(props.error);
   const [busy, setBusy] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -42,6 +43,7 @@ export default function ExpensePdfImport(
   function selectFile(file: File | null) {
     setProof("");
     setRecipient("");
+    setWarnings([]);
     setError(null);
     if (
       file &&
@@ -78,6 +80,7 @@ export default function ExpensePdfImport(
     setError(null);
     setProof("");
     setRecipient("");
+    setWarnings([]);
     try {
       const form = new FormData();
       form.set("csrf_token", props.csrfToken);
@@ -104,6 +107,7 @@ export default function ExpensePdfImport(
         throw new Error(result.error ?? "PDF se nepodařilo zpracovat.");
       }
       setValues(mergeExpenseExtraction(current, result.values));
+      setWarnings(result.warnings ?? []);
       setSuggestedContact(
         result.values.contactId || current.contactId
           ? undefined
@@ -258,6 +262,14 @@ export default function ExpensePdfImport(
             ? "Doplnit s AI"
             : "Načíst a ověřit fakturu"}
         </button>
+        {warnings.length > 0 && (
+          <div
+            role="alert"
+            class="mt-4 space-y-2 rounded-xl border border-[#e5c56e] bg-[#fff8e1] px-4 py-3 text-sm text-[#76510c]"
+          >
+            {warnings.map((message) => <p key={message}>{message}</p>)}
+          </div>
+        )}
         {recipient && (
           <p role="status" class="mt-3 text-sm text-[#277a4c]">
             {verifiedByName

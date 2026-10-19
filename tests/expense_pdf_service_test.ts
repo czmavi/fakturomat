@@ -397,3 +397,104 @@ Deno.test("PDF VAT normalization does not guess malformed or missing rates", asy
     );
   }
 });
+
+Deno.test("PDF import repairs an invalid IBAN only from a checksum-valid domestic account and warns", () => {
+  const result = parseInvoiceResult({
+    ...invoice,
+    payment: {
+      accountNumber: "2114736912/2700",
+      iban: "CZ00 2700 0000 0021 1473 6912",
+      variableSymbol: "20260803",
+      constantSymbol: "",
+      specificSymbol: "32825",
+    },
+  }, company);
+  assert(
+    result.values.details?.iban === "CZ4027000000002114736912",
+    "Wrong derived IBAN",
+  );
+  assert(result.warnings.length === 1, "Missing warning");
+  assert(result.values.details.specificSymbol === "32825", "Symbol changed");
+});
+
+Deno.test("PDF import preserves invalid or conflicting accounts for review but saving rejects them", async () => {
+  const { normalizeExpenseInput } = await import(
+    "@/services/expense_service.ts"
+  );
+  for (
+    const account of [
+      { accountNumber: "", iban: "CZ0027000000002114736912" },
+      { accountNumber: "124/2700", iban: "invalid" },
+      { accountNumber: "2114736912/2700", iban: "CZ6508000000192000145399" },
+    ]
+  ) {
+    const result = parseInvoiceResult({
+      ...invoice,
+      payment: {
+        ...account,
+        variableSymbol: "",
+        constantSymbol: "",
+        specificSymbol: "",
+      },
+    }, company);
+    assert(
+      result.values.details?.iban === account.iban &&
+        result.values.details.accountNumber === account.accountNumber,
+      "Ambiguous payment changed",
+    );
+    assert(result.warnings.length === 1, "Missing review warning");
+    assert(result.values.vatLines[0].vatRate === "21", "Invoice data lost");
+    await rejects(() => normalizeExpenseInput(result.values));
+  }
+});
+
+Deno.test("Valid PDF payment needs no warning and a valid IBAN can recover a malformed local number", () => {
+  for (const accountNumber of ["2114736912/2700", "124/2700"]) {
+    const result = parseInvoiceResult({
+      ...invoice,
+      payment: {
+        accountNumber,
+        iban: "CZ40 2700 0000 0021 1473 6912",
+        variableSymbol: "",
+        constantSymbol: "",
+        specificSymbol: "",
+      },
+    }, company);
+    assert(
+      result.values.details?.accountNumber === "2114736912/2700",
+      "Wrong account",
+    );
+    assert(
+      result.warnings.length === (accountNumber === "124/2700" ? 1 : 0),
+      "Wrong warning state",
+    );
+  }
+});
+
+Deno.test("Invoice IBAN accepts ordinary and nonbreaking spaces, and reports original AI artifacts", async () => {
+  const { prepareImportedPayment } = await import(
+    "@/services/expense_payment_import.ts"
+  );
+  for (const separator of [" ", "\u00a0", "\u202f", "\n"]) {
+    const iban = ["CZ40", "2700", "0000", "0021", "1473", "6912"].join(
+      separator,
+    );
+    const result = prepareImportedPayment({
+      accountNumber: "2114736912/2700",
+      iban,
+    });
+    assert(
+      result.iban === "CZ4027000000002114736912" &&
+        result.warnings.length === 0,
+      "Valid spaced IBAN rejected",
+    );
+  }
+  const result = prepareImportedPayment({
+    accountNumber: "2114736912/2700",
+    iban: "CZ40\u200b27000000002114736912",
+  });
+  assert(
+    result.warnings[0].includes("\\u200b"),
+    "Invisible character missing from diagnosis",
+  );
+});

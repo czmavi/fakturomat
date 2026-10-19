@@ -1,3 +1,4 @@
+import { prepareImportedPayment } from "@/services/expense_payment_import.ts";
 import type { ContactFormInput } from "@/domain/contacts/types.ts";
 import { emptyExpenseDetails } from "@/domain/expenses/details.ts";
 import type { ExpenseFormInput } from "@/domain/expenses/types.ts";
@@ -161,6 +162,7 @@ export function parseInvoiceResult(
   recipient: Recipient;
   recipientVerification: RecipientVerification;
   supplier: ContactFormInput;
+  warnings: string[];
 } {
   const data = record(raw);
   if (data.isInvoice !== true) {
@@ -247,8 +249,17 @@ export function parseInvoiceResult(
       };
     }),
   };
-  const normalized = normalizeExpenseInput(values);
-  values.details = normalized.details;
+  const payment = prepareImportedPayment(details);
+  // Validate invoice amounts and symbols independently of an uncertain bank account.
+  const normalized = normalizeExpenseInput({
+    ...values,
+    details: { ...details, accountNumber: "", iban: "" },
+  });
+  values.details = {
+    ...normalized.details!,
+    accountNumber: payment.accountNumber,
+    iban: payment.iban,
+  };
   values.totalAmount = normalized.totalAmount;
   values.vatLines = normalized.vatLines.map((
     { vatRate, baseAmount, vatAmount },
@@ -257,7 +268,13 @@ export function parseInvoiceResult(
     baseAmount,
     vatAmount,
   }));
-  return { values, recipient, recipientVerification, supplier };
+  return {
+    values,
+    recipient,
+    recipientVerification,
+    supplier,
+    warnings: payment.warnings,
+  };
 }
 
 export class ExpensePdfService {
