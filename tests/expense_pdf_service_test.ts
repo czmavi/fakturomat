@@ -337,3 +337,63 @@ Deno.test("Signed name-only PDF proof is rechecked against current official name
     env.DB.sqlite.close();
   }
 });
+
+Deno.test("PDF VAT percentage notation is normalized before validation and form display", () => {
+  for (
+    const vatRate of [
+      "21",
+      "21%",
+      "21 %",
+      "21\u00a0%",
+      "21,00 %",
+      "21.0000%",
+      " 21 % ",
+    ]
+  ) {
+    const result = parseInvoiceResult({
+      ...invoice,
+      totalAmount: "10018.80",
+      vatLines: [{ vatRate, baseAmount: "8280.00", vatAmount: "1738.80" }],
+    }, company);
+    assert(
+      result.values.vatLines[0].vatRate === "21",
+      `Not normalized: ${vatRate}`,
+    );
+    assert(result.values.vatLines[0].baseAmount === "8280.00", "Base changed");
+    assert(result.values.vatLines[0].vatAmount === "1738.80", "VAT changed");
+    assert(result.values.totalAmount === "10018.80", "Total changed");
+  }
+  for (const [input, expected] of [["0 %", "0"], ["12,5 %", "12.5"]]) {
+    const result = parseInvoiceResult({
+      ...invoice,
+      vatLines: [{ ...invoice.vatLines[0], vatRate: input }],
+    }, company);
+    assert(
+      result.values.vatLines[0].vatRate === expected,
+      "Numeric percentage was misinterpreted",
+    );
+  }
+});
+
+Deno.test("PDF VAT normalization does not guess malformed or missing rates", async () => {
+  for (
+    const vatRate of [
+      "",
+      "%",
+      "21%%",
+      "21 % DPH",
+      "-21%",
+      "21/12%",
+      "21.12345%",
+      "21 0%",
+      "osvobozeno",
+    ]
+  ) {
+    await rejects(() =>
+      parseInvoiceResult({
+        ...invoice,
+        vatLines: [{ ...invoice.vatLines[0], vatRate }],
+      }, company)
+    );
+  }
+});
