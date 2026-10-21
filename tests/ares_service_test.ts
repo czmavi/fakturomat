@@ -5,6 +5,7 @@ function assert(value: boolean, message: string): asserts value {
 }
 
 const company = {
+  pravniForma: "112",
   ico: "00123456",
   obchodniJmeno: "Ukázková firma",
   dic: "CZ00123456",
@@ -25,6 +26,7 @@ Deno.test("ARES maps identity and Czech address, preserving leading zeros", asyn
     return Promise.resolve(Response.json(company));
   });
   assert(result.name === company.obchodniJmeno, "missing name");
+  assert(result.contactType === "COMPANY", "s.r.o. must be a company");
   assert(result.ico === "00123456", "lost leading zeros");
   assert(result.dic === company.dic, "missing DIČ");
   assert(result.street === "Dlouhá 12/3a", "wrong street");
@@ -33,6 +35,37 @@ Deno.test("ARES maps identity and Czech address, preserving leading zeros", asyn
       result.country === "CZ",
     "wrong address",
   );
+});
+
+Deno.test("ARES determines contact type from legal form, not name or IČO", async () => {
+  for (
+    const [pravniForma, expected] of [
+      ["101", "PERSON"],
+      [102, "PERSON"],
+      ["103", "PERSON"],
+      ["104", "PERSON"],
+      ["105", "PERSON"],
+      ["106", "PERSON"],
+      ["107", "PERSON"],
+      ["108", "PERSON"],
+      ["424", "PERSON"],
+      ["111", "COMPANY"],
+      [112, "COMPANY"],
+      ["121", "COMPANY"],
+      ["706", "COMPANY"],
+      ["425", "COMPANY"],
+      [undefined, null],
+      [null, null],
+      ["", null],
+      ["999", null],
+    ] as const
+  ) {
+    const result = await lookupAres("00123456", () =>
+      Promise.resolve(
+        Response.json({ ...company, pravniForma }),
+      ));
+    assert(result.contactType === expected, `wrong type for ${pravniForma}`);
+  }
 });
 
 Deno.test("ARES supports address without street and does not invent DIČ", async () => {

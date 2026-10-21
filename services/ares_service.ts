@@ -1,5 +1,74 @@
 import type { AresCompany } from "@/domain/ares/types.ts";
 
+// ARES pravniForma uses the ČSÚ legal-form code list, including historical codes.
+// https://csu.gov.cz/docs/107508/ab6eff47-5cc9-98bd-3656-ebf3aa1d8a60/33010123q2h01.pdf
+const personForms = new Set([
+  "101",
+  "102",
+  "103",
+  "104",
+  "105",
+  "106",
+  "107",
+  "108",
+  "424",
+]);
+const companyForms = new Set([
+  "111",
+  "112",
+  "113",
+  "115",
+  "116",
+  "117",
+  "118",
+  "121",
+  "141",
+  "145",
+  "151",
+  "161",
+  "201",
+  "205",
+  "231",
+  "232",
+  "233",
+  "234",
+  "241",
+  "242",
+  "251",
+  "301",
+  "312",
+  "313",
+  "314",
+  "325",
+  "326",
+  "331",
+  "352",
+  "353",
+  "361",
+  "381",
+  "391",
+  "421",
+  "422",
+  "423",
+  "425",
+  "426",
+  "501",
+  "521",
+  "541",
+  "601",
+  "641",
+  "661",
+  "704",
+  "705",
+  "706",
+  "707",
+  "708",
+  "711",
+  "715",
+  "721",
+  "722",
+]);
+
 export class AresError extends Error {
   constructor(message: string, public readonly status: number) {
     super(message);
@@ -51,6 +120,11 @@ export async function lookupAres(
           : number,
       ].filter(Boolean).join(" ");
     return {
+      contactType: personForms.has(text(data.pravniForma))
+        ? "PERSON"
+        : companyForms.has(text(data.pravniForma))
+        ? "COMPANY"
+        : null,
       name: data.obchodniJmeno,
       ico,
       dic: text(data.dic),

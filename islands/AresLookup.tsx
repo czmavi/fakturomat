@@ -49,6 +49,12 @@ export default function AresLookup(
         if (display instanceof HTMLInputElement && !display.value.trim()) {
           fields.display_name = company.name.slice(0, 120);
         }
+      } else if (company.contactType) {
+        const type = form.elements.namedItem("type");
+        if (type instanceof HTMLSelectElement) {
+          type.value = company.contactType;
+          type.dispatchEvent(new Event("change", { bubbles: true }));
+        }
       }
       for (const [name, value] of Object.entries(fields)) {
         const field = form.elements.namedItem(name);
@@ -57,7 +63,11 @@ export default function AresLookup(
           field.dispatchEvent(new Event("input", { bubbles: true }));
         }
       }
-      setMessage("Údaje byly načteny z ARES. Před uložením je zkontrolujte.");
+      setMessage(
+        !organization && !company.contactType
+          ? "Údaje byly načteny z ARES. Typ kontaktu se nepodařilo určit; zkontrolujte, zda jde o osobu nebo firmu."
+          : "Údaje byly načteny z ARES. Před uložením je zkontrolujte.",
+      );
     } catch (error) {
       setFailed(true);
       setMessage(
