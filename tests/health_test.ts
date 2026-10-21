@@ -93,6 +93,43 @@ Deno.test("health rejects an uninitialized schema", async () => {
     env.DB.sqlite.close();
   }
 });
+Deno.test("health tolerates a dependency taking longer than one second", async () => {
+  const env = testRuntime();
+  env.FILES.head = async () => {
+    await new Promise((resolve) => setTimeout(resolve, 1100));
+    return null;
+  };
+  try {
+    await check(await withRuntime(env, healthResponse), 200);
+  } finally {
+    env.DB.sqlite.close();
+  }
+});
+Deno.test("health logs the failed binding without sensitive error details", async () => {
+  const env = testRuntime();
+  const logs: unknown[][] = [];
+  const warn = console.warn;
+  console.warn = (...args: unknown[]) => {
+    logs.push(args);
+  };
+  env.FILES.head = () => {
+    throw new Error("secret infrastructure detail");
+  };
+  try {
+    await check(await withRuntime(env, healthResponse), 503);
+    assert(logs.length === 1);
+    const diagnostic = logs[0][1] as {
+      reason: string;
+      checks: Record<string, string>;
+    };
+    assert(diagnostic.reason === "dependency_error");
+    assert(diagnostic.checks.FILES === "error");
+    assert(!JSON.stringify(logs).includes("secret infrastructure detail"));
+  } finally {
+    console.warn = warn;
+    env.DB.sqlite.close();
+  }
+});
 for (const binding of ["DOCUMENTS", "FILES"] as const) {
   Deno.test(`health fails when ${binding} is unavailable`, async () => {
     const env = testRuntime();

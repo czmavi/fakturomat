@@ -126,9 +126,13 @@ Každý požadavek čte jediný záznam `_write_epoch` v D1 (ověří i iniciali
 schématu) a souběžně provádí R2 HEAD pro klíč `__health_probe__` v bucketech
 DOCUMENTS a FILES. Objekt nemusí existovat; chybějící objekt je zdravý výsledek.
 Kontroly nic nezapisují, nestahují soubory, negenerují PDF a nevolají banku ani
-OpenAI. Společný limit odpovědi je 1 sekunda. D1/R2 bindingy nepřijímají
+OpenAI. Společný limit odpovědi je 3 sekundy. D1/R2 bindingy nepřijímají
 AbortSignal; při timeoutu odpověď skončí 503, rozběhnuté read-only operace se
-mohou dokončit na pozadí. Kontrola čtení nepotvrzuje schopnost zapisovat.
+mohou dokončit na pozadí. Kontrola čtení nepotvrzuje schopnost zapisovat. Při
+selhání Worker loguje důvod (`timeout` nebo `dependency_error`), uplynulý čas a
+stav každého bindingu (`pending`, `ok`, `error`), bez původních chybových zpráv
+či citlivých údajů. Timeout externího monitoru nastavte nad 3 sekundy
+(doporučeně alespoň 5 sekund).
 
 Nasazení: `deno task deploy`; nejsou potřeba nové secrets ani DB migrace. V
 CaretSix Control nastavte výše uvedenou HTTPS URL, metodu GET a očekávaný
