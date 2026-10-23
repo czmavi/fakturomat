@@ -324,18 +324,22 @@ function drawFirstPageHeader(
     size: 22,
     color: INK,
   });
-  const supplierLines = wrapText(model.supplier.logo, fonts.bold, 11, 180);
-  supplierLines.slice(0, 2).forEach((line, index) => {
-    drawRightText(
-      page,
-      line,
-      A4[0] - MARGIN,
-      top - 4 - index * 15,
-      fonts.bold,
-      11,
-      theme.primary,
-    );
-  });
+  const supplierName = model.supplier.logo.replaceAll(/\s+/g, " ").trim();
+  const headerWidth = CONTENT_WIDTH -
+    textWidth(fonts.bold, model.invoice.number, 22) - 24;
+  const supplierSize = Math.min(
+    11,
+    headerWidth / Math.max(1, textWidth(fonts.bold, supplierName, 1)),
+  );
+  drawRightText(
+    page,
+    supplierName,
+    A4[0] - MARGIN,
+    top - 4,
+    fonts.bold,
+    supplierSize,
+    theme.primary,
+  );
   page.drawLine({
     start: { x: MARGIN, y: top - 48 },
     end: { x: A4[0] - MARGIN, y: top - 48 },

@@ -149,3 +149,12 @@ Cache Rules zajistěte pro tento host a přesnou cestu bypass cache, pokud
 existuje pravidlo přepisující origin Cache-Control. Kód tyto vnější ochrany ani
 pravidla nemění. Lokální test ve workerd ověřuje routing, zdravý a chybový stav
 i ochranu ostatních cest; nenahrazuje ověření na produkční doméně po nasazení.
+
+## Nasazení správy uživatelů
+
+Před nasazením buildu se správou uživatelů aplikujte D1 migraci
+`0004_user_management.sql`. Určený správce je existující aktivní účet
+`mail@martinvich.net`; migrace nikoho dalšího nepovyšuje. Před nasazením ověřte,
+že účet existuje a po migraci má `is_admin = 1`. Přístup k současným i novým
+organizacím zajišťují členství a databázové triggery. Nové běžné účty mají
+výchozí `is_admin = 0` a zakládají se přes `/users`.

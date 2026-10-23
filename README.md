@@ -269,7 +269,8 @@ Následující seznam dokumentuje původní databázi. Nové nasazení použív�
 
 - Zatím není UI pro změnu nebo obnovu hesla; uživatel se zakládá přes CLI.
 - Externí identity provider není nakonfigurován. Rate limit Better Auth je v D1.
-- Pozvání dalších uživatelů a správa memberships zatím nemají UI.
+- Správce vytváří uživatele a přiřazuje organizace na `/users`; e-mailové
+  pozvánky se neposílají.
 - Správa instalační knihovny globálních šablon nemá UI; subjekty upravují pouze
   své vlastní kopie.
 - Faktury vystavené před nasazením migrace `0008` se automaticky zpětně
@@ -318,3 +319,21 @@ Lokální `deno task dev` nejprve vytvoří build a spustí jej ve Wrangleru na 
 znovu; automatické HMR nyní není zapnuté kvůli nekompatibilitě vývojových
 runnerů Fresh a Cloudflare Vite pluginu. `deno task start` spustí již existující
 build.
+
+## Správa uživatelů
+
+Správce otevře **Uživatelé** v horní navigaci. Může vytvořit účet s e-mailem,
+jménem a heslem (12–512 znaků), vybrat organizace, později výběr změnit,
+nastavit nové heslo nebo účet deaktivovat. Přihlašovací údaje předá uživateli
+bezpečnou cestou; aplikace neposílá e-mailové pozvánky.
+
+Běžný uživatel vidí a spravuje pouze přidělené organizace. Nemůže zakládat
+organizace ani spravovat uživatele. Účet bez přiřazení nemá přístup k žádné
+organizaci. Změna účtu zruší jeho existující sessions a vyžádá nové přihlášení.
+Správce má členství ve všech současných i budoucích organizacích.
+
+Migrace `0004_user_management.sql` přidá roli správce pouze existujícímu
+aktivnímu účtu `mail@martinvich.net`. U ostatních účtů zachová dosavadní
+přiřazení. Bootstrap `user:create` zakládá administrátora pro novou instalaci;
+pro běžné účty používejte webovou správu. Administrátory nelze tímto formulářem
+deaktivovat, povyšovat ani měnit, aby se předešlo ztrátě správcovského přístupu.

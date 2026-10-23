@@ -1,3 +1,4 @@
+import RegenerateInvoicePdf from "@/islands/RegenerateInvoicePdf.tsx";
 import { page } from "fresh";
 import { Head } from "fresh/runtime";
 import { define } from "@/utils.ts";
@@ -13,6 +14,8 @@ import { D1InvoicePaymentRepository } from "@/repositories/invoice_payment_repos
 interface PageData {
   invoice: Invoice;
   issued: boolean;
+  pdfRegenerated: boolean;
+  pdfError: boolean;
   issueError: string | null;
   hasPdf: boolean;
   payments: InvoicePayment[];
@@ -45,6 +48,8 @@ export const handler = define.handlers<PageData>({
     ]);
     return page({
       invoice,
+      pdfRegenerated: ctx.url.searchParams.get("pdf_regenerated") === "1",
+      pdfError: ctx.url.searchParams.get("pdf_error") === "1",
       issued: ctx.url.searchParams.get("issued") === "1",
       issueError: ctx.url.searchParams.get("issue_error"),
       hasPdf: document !== null,
@@ -154,10 +159,31 @@ export default define.page<typeof handler>(({ data, params, state }) => {
               >
                 Stáhnout PDF
               </a>
+              <RegenerateInvoicePdf
+                action={`${root}/${invoice.id}/regenerate`}
+                csrfToken={state.csrfToken}
+              />
             </div>
           )}
         </div>
 
+        {data.pdfRegenerated && (
+          <div
+            role="status"
+            class="mt-6 rounded-xl border border-[#b9ddc8] bg-[#eff9f2] px-4 py-3 text-sm text-[#21643e]"
+          >
+            PDF bylo přegenerováno. Můžete jej zobrazit nebo stáhnout.
+          </div>
+        )}
+        {data.pdfError && (
+          <div
+            role="alert"
+            class="mt-6 rounded-xl border border-[#efc7c1] bg-[#fff5f3] px-4 py-3 text-sm text-[#962f25]"
+          >
+            PDF se nepodařilo přegenerovat. Původní PDF zůstává dostupné. Zkuste
+            to znovu.
+          </div>
+        )}
         {data.issued && (
           <div
             role="status"

@@ -14,6 +14,8 @@ export class TestD1 implements D1Database {
         "0001_schema.sql",
         "0002_integrity.sql",
         "0003_expense_details.sql",
+        "0004_user_management.sql",
+        "0005_invoice_document_revisions.sql",
       ]
     ) {
       this.sqlite.exec(

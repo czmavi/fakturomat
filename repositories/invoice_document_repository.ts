@@ -1,6 +1,9 @@
 import type { Sql } from "@/database/d1.ts";
 import { getDb } from "@/database/client.ts";
-import type { InvoiceDocument } from "@/domain/invoices/invoice_document.ts";
+import type {
+  InvoiceDocument,
+  PreparedInvoiceDocument,
+} from "@/domain/invoices/invoice_document.ts";
 
 interface InvoiceDocumentRow {
   id: string;
@@ -41,6 +44,28 @@ export interface InvoiceDocumentRepository {
 export class D1InvoiceDocumentRepository implements InvoiceDocumentRepository {
   constructor(private readonly sql: Sql = getDb()) {}
 
+  async addRevisionForUser(
+    organizationId: string,
+    invoiceId: string,
+    userId: string,
+    document: PreparedInvoiceDocument,
+  ): Promise<boolean> {
+    const rows = await this.sql<{ id: string }[]>`
+      INSERT INTO invoice_document_revisions
+        (id, organization_id, invoice_id, type, storage_provider, storage_key, etag, sha256, size, created_by)
+      SELECT ${document.id}, invoices.organization_id, invoices.id, 'PDF',
+        ${document.storageProvider}, ${document.storageKey}, ${document.etag},
+        ${document.sha256}, ${document.size}, ${userId}
+      FROM invoices
+      JOIN organization_memberships AS memberships
+        ON memberships.organization_id = invoices.organization_id
+      WHERE invoices.id = ${invoiceId} AND invoices.organization_id = ${organizationId}
+        AND memberships.user_id = ${userId} AND invoices.status <> 'DRAFT'
+      RETURNING id
+    `;
+    return rows.length === 1;
+  }
+
   async findPdfForUser(
     organizationId: string,
     invoiceId: string,
@@ -50,7 +75,13 @@ export class D1InvoiceDocumentRepository implements InvoiceDocumentRepository {
       SELECT documents.id, documents.organization_id, documents.invoice_id,
         documents.type, documents.storage_provider, documents.storage_key, documents.etag, documents.sha256,
         documents.size, documents.created_at
-      FROM invoice_documents AS documents
+      FROM (
+        SELECT id, organization_id, invoice_id, type, storage_provider, storage_key,
+          etag, sha256, size, created_at, 0 AS revision_order FROM invoice_documents
+        UNION ALL
+        SELECT id, organization_id, invoice_id, type, storage_provider, storage_key,
+          etag, sha256, size, created_at, revision AS revision_order FROM invoice_document_revisions
+      ) AS documents
       JOIN invoices
         ON invoices.id = documents.invoice_id
         AND invoices.organization_id = documents.organization_id
@@ -60,6 +91,7 @@ export class D1InvoiceDocumentRepository implements InvoiceDocumentRepository {
         AND documents.invoice_id = ${invoiceId}
         AND documents.type = 'PDF'
         AND memberships.user_id = ${userId}
+      ORDER BY documents.revision_order DESC
       LIMIT 1
     `;
     return rows[0] ? documentFromRow(rows[0]) : null;

@@ -183,6 +183,100 @@ Deno.test("D1/R2 lifecycle, exact amounts, authentication, immutable documents, 
           crypto.randomUUID(),
         ) === null,
       );
+      // Regeneration keeps issued data and all prior documents intact.
+      const snapshot = await invoiceRepo.findForUser(
+        organizationId,
+        draft.id,
+        userId,
+      );
+      assert(snapshot?.templateVersionId);
+      const issuedVersion = await new D1InvoiceTemplateRepository()
+        .findVersionForUser(
+          snapshot.invoiceTemplateId,
+          snapshot.templateVersionId,
+          scope,
+        );
+      assert(issuedVersion);
+      const documents = new D1InvoiceDocumentRepository();
+      const replacement = await preparer.prepare(snapshot, issuedVersion);
+      assert(
+        !await documents.addRevisionForUser(
+          organizationId,
+          draft.id,
+          crypto.randomUUID(),
+          replacement,
+        ),
+      );
+      assert(
+        (await documents.findPdfForUser(organizationId, draft.id, userId))
+          ?.id === doc.id,
+      );
+      assert(
+        await documents.addRevisionForUser(
+          organizationId,
+          draft.id,
+          userId,
+          replacement,
+        ),
+      );
+      const latest = await documents.findPdfForUser(
+        organizationId,
+        draft.id,
+        userId,
+      );
+      assert(latest?.id === replacement.id);
+      assert(latest.storageKey !== doc.storageKey);
+      assert(
+        await documents.findPdfForUser(
+          organizationId,
+          draft.id,
+          crypto.randomUUID(),
+        ) === null,
+      );
+      assert(
+        JSON.stringify(
+          await invoiceRepo.findForUser(organizationId, draft.id, userId),
+        ) === JSON.stringify(snapshot),
+      );
+      assert(
+        (await getInvoiceDocumentDownloadTarget(storage, doc, "original.pdf"))
+          .kind === "local",
+      );
+      assert(
+        (await getInvoiceDocumentDownloadTarget(storage, latest, "latest.pdf"))
+          .kind === "local",
+      );
+      await rejects(() =>
+        sql`UPDATE invoice_document_revisions SET sha256 = ${
+          "a".repeat(64)
+        } WHERE id = ${replacement.id}`
+      );
+      await rejects(() =>
+        sql`DELETE FROM invoice_document_revisions WHERE id = ${replacement.id}`
+      );
+      const secondReplacement = await preparer.prepare(snapshot, issuedVersion);
+      assert(
+        await documents.addRevisionForUser(
+          organizationId,
+          draft.id,
+          userId,
+          secondReplacement,
+        ),
+      );
+      assert(
+        (await documents.findPdfForUser(organizationId, draft.id, userId))
+          ?.id === secondReplacement.id,
+      );
+      const anotherDraft = await invoices.createDraft(draftInput);
+      assert(anotherDraft);
+      assert(
+        !await documents.addRevisionForUser(
+          organizationId,
+          anotherDraft.id,
+          userId,
+          await preparer.prepare(snapshot, issuedVersion),
+        ),
+      );
       // Batch failure must roll back earlier writes.
       const failedId = crypto.randomUUID();
       await rejects(() =>

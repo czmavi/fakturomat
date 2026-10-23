@@ -39,11 +39,15 @@ const EMPTY_VALUES = {
 export const handler = define.handlers<OrganizationFormData>({
   GET(ctx) {
     if (ctx.state.user === null) return ctx.redirect("/login");
+    if (!ctx.state.user.isAdmin) {
+      return new Response("Přístup odepřen.", { status: 403 });
+    }
     return page({ error: null, values: EMPTY_VALUES });
   },
   async POST(ctx) {
     const user = ctx.state.user;
     if (user === null) return ctx.redirect("/login");
+    if (!user.isAdmin) return new Response("Přístup odepřen.", { status: 403 });
 
     const form = await ctx.req.formData();
     const values = {

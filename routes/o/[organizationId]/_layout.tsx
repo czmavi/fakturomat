@@ -49,13 +49,17 @@ export default define.layout(({ Component, state, url }) => {
                   {item.displayName}
                 </a>
               ))}
-              <div class="my-1 border-t border-[#e3e7e3]" />
-              <a
-                href="/organizations/new"
-                class="block rounded-lg px-3 py-2.5 text-sm font-medium text-[#277a4c] hover:bg-[#edf3ee]"
-              >
-                + Přidat subjekt
-              </a>
+              {state.user?.isAdmin && (
+                <>
+                  <div class="my-1 border-t border-[#e3e7e3]" />
+                  <a
+                    href="/organizations/new"
+                    class="block rounded-lg px-3 py-2.5 text-sm font-medium text-[#277a4c] hover:bg-[#edf3ee]"
+                  >
+                    + Přidat subjekt
+                  </a>
+                </>
+              )}
             </div>
           </details>
         </div>
@@ -159,6 +163,11 @@ export default define.layout(({ Component, state, url }) => {
             </p>
           </div>
           <div class="flex items-center gap-4">
+            {state.user?.isAdmin && (
+              <a href="/users" class="text-sm font-semibold text-[#277a4c]">
+                Uživatelé
+              </a>
+            )}
             <span class="hidden text-sm text-[#68736b] sm:inline">
               {state.user?.displayName}
             </span>

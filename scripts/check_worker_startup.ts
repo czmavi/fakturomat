@@ -94,6 +94,7 @@ if (import.meta.main) {
         "0001_schema.sql",
         "0002_integrity.sql",
         "0003_expense_details.sql",
+        "0004_user_management.sql",
       ]
     ) {
       const sql = await Deno.readTextFile(
@@ -298,6 +299,88 @@ if (import.meta.main) {
     );
     if (denied.status === 200) throw new Error("Anonymous PDF leak");
     await denied.body?.cancel();
+    // Exercise the actual user-management page and creation flow in workerd.
+    await db.prepare("UPDATE users SET is_admin = 1 WHERE id = ?").bind(id)
+      .run();
+    const management = await mf.dispatchFetch("https://fakturomat.test/users", {
+      headers: { cookie: requestCookie },
+    });
+    const managementHtml = await management.text();
+    if (
+      management.status !== 200 ||
+      !managementHtml.includes("Správa uživatelů") ||
+      !managementHtml.includes('name="organization_id"')
+    ) {
+      throw new Error("Worker user management rendering failed");
+    }
+    const newUser = await mf.dispatchFetch("https://fakturomat.test/users", {
+      method: "POST",
+      headers: {
+        cookie: requestCookie,
+        origin: "https://fakturomat.test",
+        "content-type": "application/x-www-form-urlencoded",
+      },
+      body: new URLSearchParams({
+        csrf_token: token,
+        email: "member@example.test",
+        display_name: "Member",
+        password: "member-test-password",
+        active: "1",
+        organization_id: org,
+      }).toString(),
+      redirect: "manual",
+    });
+    if (newUser.status !== 303) {
+      throw new Error(
+        `Worker user creation failed: ${newUser.status} ${await newUser
+          .text()}`,
+      );
+    }
+    await newUser.body?.cancel();
+    const memberLogin = await mf.dispatchFetch(
+      "https://fakturomat.test/api/auth/sign-in/email",
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          origin: "https://fakturomat.test",
+          "cf-connecting-ip": "192.0.2.2",
+        },
+        body: JSON.stringify({
+          email: "member@example.test",
+          password: "member-test-password",
+        }),
+      },
+    );
+    if (memberLogin.status !== 200) {
+      throw new Error("Created user cannot sign in");
+    }
+    const memberCookie = memberLogin.headers.getSetCookie().map((value) =>
+      value.split(";")[0]
+    ).join("; ");
+    await memberLogin.body?.cancel();
+    const memberDashboard = await mf.dispatchFetch(
+      `https://fakturomat.test/o/${org}/dashboard`,
+      { headers: { cookie: memberCookie } },
+    );
+    if (memberDashboard.status !== 200) {
+      throw new Error("Assigned organization is inaccessible");
+    }
+    const memberHtml = await memberDashboard.text();
+    if (
+      memberHtml.includes('href="/users"') ||
+      memberHtml.includes('href="/organizations/new"')
+    ) throw new Error("Admin navigation leaked to member");
+    for (const path of ["/users", "/organizations/new"]) {
+      const forbidden = await mf.dispatchFetch(
+        `https://fakturomat.test${path}`,
+        { headers: { cookie: memberCookie }, redirect: "manual" },
+      );
+      if (forbidden.status !== 403) {
+        throw new Error(`Member accessed admin page: ${path}`);
+      }
+      await forbidden.body?.cancel();
+    }
     const bucket = await mf.getR2Bucket("DOCUMENTS") as unknown as {
       put(
         key: string,

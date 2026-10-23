@@ -30,6 +30,11 @@ export default define.page<typeof handler>(({ data, state }) => (
           </div>
           <span class="font-semibold text-[#183e2a]">Fakturomat</span>
         </div>
+        {state.user?.isAdmin && (
+          <a href="/users" class="text-sm font-semibold text-[#277a4c]">
+            Uživatelé
+          </a>
+        )}
         <form method="post" action="/logout">
           <input type="hidden" name="csrf_token" value={state.csrfToken} />
           <button
@@ -43,21 +48,26 @@ export default define.page<typeof handler>(({ data, state }) => (
     </header>
     <section class="mx-auto max-w-6xl px-5 py-12">
       <p class="text-sm font-medium text-[#277a4c]">
-        Začněte prvním subjektem
+        {data.user.isAdmin
+          ? "Začněte prvním subjektem"
+          : "Přístup k organizacím"}
       </p>
       <h1 class="mt-2 text-3xl font-semibold tracking-tight">
         Dobrý den, {data.user.displayName}
       </h1>
       <p class="mt-3 max-w-2xl leading-7 text-[#667169]">
-        Zatím nemáte přístup k žádnému subjektu. Vytvořte OSVČ, spolek nebo
-        společnost, pro kterou chcete spravovat doklady.
+        {data.user.isAdmin
+          ? "Zatím nemáte žádný subjekt. Vytvořte organizaci, pro kterou chcete spravovat doklady."
+          : "Zatím nemáte přiřazenou žádnou organizaci. Požádejte správce o přidělení přístupu."}
       </p>
-      <a
-        href="/organizations/new"
-        class="mt-7 inline-flex rounded-xl bg-[#183e2a] px-5 py-3 font-semibold text-white hover:bg-[#23583b]"
-      >
-        Vytvořit první subjekt
-      </a>
+      {data.user.isAdmin && (
+        <a
+          href="/organizations/new"
+          class="mt-7 inline-flex rounded-xl bg-[#183e2a] px-5 py-3 font-semibold text-white hover:bg-[#23583b]"
+        >
+          Vytvořit první subjekt
+        </a>
+      )}
     </section>
   </main>
 ));

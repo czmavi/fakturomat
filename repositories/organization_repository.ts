@@ -111,6 +111,7 @@ export class D1OrganizationRepository implements OrganizationRepository {
       transaction.queue(transaction`
         INSERT INTO organization_memberships (organization_id, user_id, role)
         VALUES (${input.id}, ${input.ownerUserId}, 'OWNER')
+        ON CONFLICT (organization_id, user_id) DO UPDATE SET role = 'OWNER'
       `);
       transaction.queue(transaction`
         INSERT INTO invoice_number_sequences (

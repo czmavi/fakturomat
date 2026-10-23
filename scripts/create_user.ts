@@ -19,11 +19,11 @@ if (import.meta.main) {
   const id = crypto.randomUUID();
   const hash = await hashPassword(password);
   const script =
-    `INSERT INTO users (id,email,display_name,email_verified,is_active) VALUES (${
+    `INSERT INTO users (id,email,display_name,email_verified,is_active,is_admin) VALUES (${
       sqlLiteral(id)
     },${sqlLiteral(email)},${
       sqlLiteral(name)
-    },1,1);\nINSERT INTO auth_accounts (id,account_id,provider_id,user_id,password) VALUES (${
+    },1,1,1);\nINSERT INTO auth_accounts (id,account_id,provider_id,user_id,password) VALUES (${
       sqlLiteral(crypto.randomUUID())
     },${sqlLiteral(id)},'credential',${sqlLiteral(id)},${sqlLiteral(hash)});\n`;
   const file = await Deno.open(output, {

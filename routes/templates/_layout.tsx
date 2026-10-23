@@ -11,6 +11,11 @@ export default define.layout(({ Component, state }) => (
           <span class="font-semibold text-[#183e2a]">Fakturomat</span>
         </a>
         <div class="flex items-center gap-4">
+          {state.user?.isAdmin && (
+            <a href="/users" class="text-sm font-semibold text-[#277a4c]">
+              Uživatelé
+            </a>
+          )}
           <span class="hidden text-sm text-[#68736b] sm:inline">
             {state.user?.displayName}
           </span>
