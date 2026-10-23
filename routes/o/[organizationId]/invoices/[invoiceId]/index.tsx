@@ -1,3 +1,4 @@
+import DeleteInvoice from "@/islands/DeleteInvoice.tsx";
 import RegenerateInvoicePdf from "@/islands/RegenerateInvoicePdf.tsx";
 import { page } from "fresh";
 import { Head } from "fresh/runtime";
@@ -16,6 +17,7 @@ interface PageData {
   issued: boolean;
   pdfRegenerated: boolean;
   pdfError: boolean;
+  deleteError: boolean;
   issueError: string | null;
   hasPdf: boolean;
   payments: InvoicePayment[];
@@ -48,6 +50,7 @@ export const handler = define.handlers<PageData>({
     ]);
     return page({
       invoice,
+      deleteError: ctx.url.searchParams.get("delete_error") === "1",
       pdfRegenerated: ctx.url.searchParams.get("pdf_regenerated") === "1",
       pdfError: ctx.url.searchParams.get("pdf_error") === "1",
       issued: ctx.url.searchParams.get("issued") === "1",
@@ -167,6 +170,20 @@ export default define.page<typeof handler>(({ data, params, state }) => {
           )}
         </div>
 
+        <div class="mt-4 flex justify-end">
+          <DeleteInvoice
+            action={`${root}/${invoice.id}/delete`}
+            csrfToken={state.csrfToken}
+          />
+        </div>
+        {data.deleteError && (
+          <div
+            role="alert"
+            class="mt-6 rounded-xl bg-[#fff5f3] px-4 py-3 text-sm text-[#962f25]"
+          >
+            Fakturu se nepodařilo smazat. Zkuste to znovu.
+          </div>
+        )}
         {data.pdfRegenerated && (
           <div
             role="status"

@@ -80,6 +80,20 @@ export async function allocateNextInvoiceNumber(
   sequence: InvoiceNumberSequence,
   year: number,
 ): Promise<string> {
+  const released = await sql<{ number: string }[]>`
+    SELECT number FROM released_invoice_numbers
+    WHERE number_sequence_id = ${sequence.id} AND year = ${year}
+      AND NOT EXISTS (SELECT 1 FROM invoices WHERE number_sequence_id = ${sequence.id} AND invoices.number = released_invoice_numbers.number)
+    ORDER BY length(number), number LIMIT 1
+  `;
+  if (released[0]) {
+    sql.queue(
+      sql`DELETE FROM released_invoice_numbers WHERE number_sequence_id = ${sequence.id} AND number = ${
+        released[0].number
+      }`,
+    );
+    return released[0].number;
+  }
   const previous = await sql<
     { last_value: string }[]
   >`SELECT last_value FROM invoice_number_counters WHERE invoice_number_sequence_id = ${sequence.id} AND year = ${year}`;

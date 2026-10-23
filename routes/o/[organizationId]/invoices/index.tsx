@@ -1,3 +1,4 @@
+import { isUuid } from "@/domain/organizations/types.ts";
 import { page } from "fresh";
 import { Head } from "fresh/runtime";
 import { define } from "@/utils.ts";
@@ -12,6 +13,8 @@ import { D1InvoiceRepository } from "@/repositories/invoice_repository.ts";
 
 interface PageData {
   invoices: InvoiceSummary[];
+  deleted: boolean;
+  cleanup: string | null;
   status: InvoiceStatus | null;
 }
 
@@ -26,7 +29,13 @@ export const handler = define.handlers<PageData>({
       userId: ctx.state.user!.id,
       status,
     });
-    return page({ invoices, status });
+    const cleanup = ctx.url.searchParams.get("cleanup");
+    return page({
+      invoices,
+      status,
+      deleted: ctx.url.searchParams.get("deleted") === "1",
+      cleanup: cleanup && isUuid(cleanup) ? cleanup : null,
+    });
   },
 });
 
@@ -49,7 +58,7 @@ function badgeClass(status: InvoiceStatus): string {
   }
 }
 
-export default define.page<typeof handler>(({ data, params }) => {
+export default define.page<typeof handler>(({ data, params, state }) => {
   const root = `/o/${params.organizationId}/invoices`;
   const filters: Array<[string, InvoiceStatus | null]> = [
     ["Všechny", null],
@@ -63,6 +72,35 @@ export default define.page<typeof handler>(({ data, params }) => {
       <Head>
         <title>Faktury · Fakturomat</title>
       </Head>
+      {data.deleted && (
+        <p
+          role="status"
+          class="mx-auto mb-6 max-w-6xl rounded-xl bg-[#eff9f2] p-4 text-sm text-[#21643e]"
+        >
+          Faktura byla kompletně smazána. Její případné číslo je znovu dostupné.
+        </p>
+      )}
+      {data.cleanup && (
+        <div
+          role="alert"
+          class="mx-auto mb-6 max-w-6xl rounded-xl bg-[#fff8e7] p-4 text-sm text-[#765814]"
+        >
+          Faktura je smazaná a číslo uvolněné, ale některé PDF soubory se
+          nepodařilo odstranit z úložiště.
+          <form
+            method="post"
+            action={`${root}/${data.cleanup}/delete`}
+            class="mt-3"
+          >
+            <input type="hidden" name="csrf_token" value={state.csrfToken} />
+            <input type="hidden" name="confirmed" value="yes" />
+            <button type="submit" class="font-semibold underline">
+              Zkusit znovu odstranit PDF
+            </button>
+          </form>
+        </div>
+      )}
+
       <div class="mx-auto max-w-6xl">
         <div class="flex flex-wrap items-end justify-between gap-5">
           <div>

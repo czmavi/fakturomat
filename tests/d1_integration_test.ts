@@ -1,3 +1,4 @@
+import { InvoiceDeletionService } from "@/services/invoice_deletion_service.ts";
 import { withRuntime } from "@/config/runtime.ts";
 import { getDb } from "@/database/client.ts";
 import { money } from "@/database/d1.ts";
@@ -414,6 +415,119 @@ Deno.test("D1/R2 lifecycle, exact amounts, authentication, immutable documents, 
       await objectStorage.delete("organizations/test/logo.png");
       assert(await objectStorage.get("organizations/test/logo.png") === null);
       await rejects(() => objectStorage.get("../escape"));
+      const deletion = new InvoiceDeletionService(sql, env.DOCUMENTS);
+      const deleteInput = { ...scope, invoiceId: draft.id };
+      assert(
+        await deletion.deleteForUser({
+          ...deleteInput,
+          userId: crypto.randomUUID(),
+        }) === "not_found",
+      );
+      assert(await invoiceRepo.findForUser(organizationId, draft.id, userId));
+      await rejects(() => sql`DELETE FROM invoices WHERE id = ${draft.id}`);
+      // A failure in the database must roll back metadata, permits and cleanup work.
+      env.DB.sqlite.exec(
+        "CREATE TRIGGER test_delete_failure BEFORE DELETE ON invoices BEGIN SELECT RAISE(ABORT, 'test deletion failure'); END;",
+      );
+      await rejects(() => deletion.deleteForUser(deleteInput));
+      assert(await invoiceRepo.findForUser(organizationId, draft.id, userId));
+      assert((await sql`SELECT * FROM invoice_deletion_permits`).length === 0);
+      assert((await sql`SELECT * FROM invoice_pdf_cleanup`).length === 0);
+      env.DB.sqlite.exec("DROP TRIGGER test_delete_failure");
+      // Keep a later invoice to exercise reuse of a gap, rather than resetting the counter.
+      const laterDraft = await invoices.createDraft(draftInput);
+      assert(laterDraft);
+      const laterInvoice = await invoiceRepo.issueForUser({
+        ...scope,
+        invoiceId: laterDraft.id,
+      }, preparer);
+      assert(laterInvoice.kind === "issued");
+      const keys = await sql<
+        { storage_key: string }[]
+      >`SELECT storage_key FROM invoice_documents WHERE invoice_id = ${draft.id} UNION ALL SELECT storage_key FROM invoice_document_revisions WHERE invoice_id = ${draft.id}`;
+      const failingDeletion = new InvoiceDeletionService(sql, {
+        delete() {
+          return Promise.reject(new Error("simulated R2 failure"));
+        },
+      });
+      assert(
+        await failingDeletion.deleteForUser(deleteInput) === "cleanup_pending",
+      );
+      assert(
+        await invoiceRepo.findForUser(organizationId, draft.id, userId) ===
+          null,
+      );
+      assert(
+        (await sql`SELECT * FROM invoice_payments WHERE invoice_id = ${draft.id}`)
+          .length === 0,
+      );
+      assert(
+        (await sql`SELECT * FROM invoice_items WHERE invoice_id = ${draft.id}`)
+          .length === 0,
+      );
+      assert(
+        (await sql`SELECT * FROM invoice_documents WHERE invoice_id = ${draft.id}`)
+          .length === 0,
+      );
+      assert(
+        (await sql`SELECT * FROM invoice_document_revisions WHERE invoice_id = ${draft.id}`)
+          .length === 0,
+      );
+      assert(
+        (await sql`SELECT * FROM bank_transactions WHERE organization_id = ${organizationId}`)
+          .length === 2,
+      );
+      assert(
+        await deletion.deleteForUser({
+          ...deleteInput,
+          userId: crypto.randomUUID(),
+        }) === "not_found",
+      );
+      assert(await deletion.deleteForUser(deleteInput) === "deleted");
+      for (const key of keys) {
+        assert(await env.DOCUMENTS.get(key.storage_key) === null);
+      }
+      assert((await sql`SELECT * FROM invoice_pdf_cleanup`).length === 0);
+      const replacementDraft = await invoices.createDraft({
+        ...draftInput,
+        variableSymbol: "",
+      });
+      assert(replacementDraft);
+      const reused = await invoiceRepo.issueForUser({
+        ...scope,
+        invoiceId: replacementDraft.id,
+      }, preparer);
+      assert(
+        reused.kind === "issued" &&
+          reused.invoice.number === issued.invoice.number,
+      );
+      assert(
+        (await invoiceRepo.findForUser(organizationId, laterDraft.id, userId))
+          ?.number === laterInvoice.invoice.number,
+      );
+      // Draft deletion never releases a number.
+      assert(
+        await deletion.deleteForUser({
+          ...scope,
+          invoiceId: anotherDraft.id,
+        }) === "deleted",
+      );
+      assert((await sql`SELECT * FROM released_invoice_numbers`).length === 0);
+      // Reuse also works for the last issued invoice and preserves the sequence counter.
+      assert(
+        await deletion.deleteForUser({ ...scope, invoiceId: laterDraft.id }) ===
+          "deleted",
+      );
+      const lastDraft = await invoices.createDraft(draftInput);
+      assert(lastDraft);
+      const lastReused = await invoiceRepo.issueForUser({
+        ...scope,
+        invoiceId: lastDraft.id,
+      }, preparer);
+      assert(
+        lastReused.kind === "issued" &&
+          lastReused.invoice.number === laterInvoice.invoice.number,
+      );
       await auth.api.signOut({ headers: new Headers({ cookie }) });
       assert(
         await auth.api.getSession({ headers: new Headers({ cookie }) }) ===

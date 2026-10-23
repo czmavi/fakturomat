@@ -297,6 +297,112 @@ if (import.meta.main) {
     );
     if (denied.status === 200) throw new Error("Anonymous PDF leak");
     await denied.body?.cancel();
+    const deleteUrl =
+      `https://fakturomat.test/o/${org}/invoices/${invoice}/delete`;
+    const detail = await mf.dispatchFetch(
+      `https://fakturomat.test/o/${org}/invoices/${invoice}`,
+      { headers: { cookie: requestCookie } },
+    );
+    const detailHtml = await detail.text();
+    if (
+      detail.status !== 200 || !detailHtml.includes("Trvale smazat fakturu?") ||
+      !detailHtml.includes("<dialog")
+    ) throw new Error("Invoice deletion dialog is missing");
+    for (
+      const [form, expected] of [
+        [{ csrf_token: "invalid", confirmed: "yes" }, 403],
+        [{ csrf_token: token, confirmed: "no" }, 400],
+      ] as const
+    ) {
+      const deniedDelete = await mf.dispatchFetch(deleteUrl, {
+        method: "POST",
+        headers: {
+          cookie: requestCookie,
+          origin: "https://fakturomat.test",
+          "content-type": "application/x-www-form-urlencoded",
+        },
+        body: new URLSearchParams(form).toString(),
+        redirect: "manual",
+      });
+      if (deniedDelete.status !== expected) {
+        throw new Error(`Deletion guard failed: ${deniedDelete.status}`);
+      }
+      await deniedDelete.body?.cancel();
+    }
+    const originalNumber = await db.prepare(
+      "SELECT number FROM invoices WHERE id = ?",
+    ).bind(invoice).first<{ number: string }>();
+    const documentKeys = await db.prepare(
+      "SELECT storage_key FROM invoice_documents WHERE invoice_id = ?",
+    ).bind(invoice).all<{ storage_key: string }>();
+    const deleted = await mf.dispatchFetch(deleteUrl, {
+      method: "POST",
+      headers: {
+        cookie: requestCookie,
+        origin: "https://fakturomat.test",
+        "content-type": "application/x-www-form-urlencoded",
+      },
+      body: new URLSearchParams({ csrf_token: token, confirmed: "yes" })
+        .toString(),
+      redirect: "manual",
+    });
+    if (
+      deleted.status !== 303 ||
+      !deleted.headers.get("location")?.endsWith("?deleted=1")
+    ) {
+      throw new Error(
+        `Worker invoice deletion failed: ${deleted.status} ${
+          deleted.headers.get("location")
+        }`,
+      );
+    }
+    await deleted.body?.cancel();
+    if (
+      await db.prepare("SELECT id FROM invoices WHERE id = ?").bind(invoice)
+        .first()
+    ) throw new Error("Deleted invoice remains in D1");
+    const documentBucket = await mf.getR2Bucket("DOCUMENTS") as unknown as {
+      head(key: string): Promise<unknown>;
+    };
+    for (const document of documentKeys.results) {
+      if (await documentBucket.head(document.storage_key)) {
+        throw new Error("Deleted invoice PDF remains in R2");
+      }
+    }
+    // Reissue another invoice through the HTTP handler and verify exact number reuse.
+    const replacementInvoice = crypto.randomUUID();
+    await db.batch([
+      db.prepare(
+        "INSERT INTO invoices(id,organization_id,contact_id,number_sequence_id,bank_account_id,invoice_template_id,issue_date,due_date,currency,subtotal,total) VALUES (?,?,?,?,?,'10000000-0000-4000-8000-000000000001','2026-10-18','2026-10-31','CZK',2000,2000)",
+      ).bind(replacementInvoice, org, contact, sequence, bank),
+      db.prepare(
+        "INSERT INTO invoice_items(id,invoice_id,description,quantity,unit,unit_price,total,position) VALUES (?,?,'Náhrada','2','ks',1000,2000,1)",
+      ).bind(crypto.randomUUID(), replacementInvoice),
+    ]);
+    const reissued = await mf.dispatchFetch(
+      `https://fakturomat.test/o/${org}/invoices/${replacementInvoice}/issue`,
+      {
+        method: "POST",
+        headers: {
+          cookie: requestCookie,
+          origin: "https://fakturomat.test",
+          "content-type": "application/x-www-form-urlencoded",
+        },
+        body: new URLSearchParams({ csrf_token: token }).toString(),
+        redirect: "manual",
+      },
+    );
+    if (
+      reissued.status !== 303 ||
+      !reissued.headers.get("location")?.endsWith("?issued=1")
+    ) throw new Error("Worker reissuance failed");
+    await reissued.body?.cancel();
+    const reusedNumber = await db.prepare(
+      "SELECT number FROM invoices WHERE id = ?",
+    ).bind(replacementInvoice).first<{ number: string }>();
+    if (!originalNumber || reusedNumber?.number !== originalNumber.number) {
+      throw new Error("Released invoice number was not reused");
+    }
     // Exercise the actual user-management page and creation flow in workerd.
     await db.prepare("UPDATE users SET is_admin = 1 WHERE id = ?").bind(id)
       .run();
@@ -398,7 +504,7 @@ if (import.meta.main) {
       await (await bucket.get("check.pdf"))?.text() !== "%PDF-test"
     ) throw new Error("R2 conditional put failed");
     console.log(
-      "Worker smoke passed: real workerd, D1 schema, scrypt login/session, SSR, invoice issuance with embedded fonts, authenticated PDF download and conditional R2 writes.",
+      "Worker smoke passed: real workerd, D1 schema, scrypt login/session, SSR, invoice issuance with embedded fonts, authenticated PDF download, invoice deletion and number reuse, and conditional R2 writes.",
     );
   } finally {
     await mf.dispose();
