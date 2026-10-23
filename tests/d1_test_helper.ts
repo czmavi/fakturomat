@@ -9,18 +9,15 @@ import type {
 export class TestD1 implements D1Database {
   readonly sqlite = new DatabaseSync(":memory:");
   constructor() {
-    for (
-      const file of [
-        "0001_schema.sql",
-        "0002_integrity.sql",
-        "0003_expense_details.sql",
-        "0004_user_management.sql",
-        "0005_invoice_document_revisions.sql",
-      ]
-    ) {
+    const migrationsDirectory = new URL("../migrations/d1/", import.meta.url);
+    const migrationFiles = Array.from(Deno.readDirSync(migrationsDirectory))
+      .filter((entry) => entry.isFile && /^\d+_.*\.sql$/.test(entry.name))
+      .map((entry) => entry.name)
+      .sort();
+    for (const file of migrationFiles) {
       this.sqlite.exec(
         Deno.readTextFileSync(
-          new URL(`../migrations/d1/${file}`, import.meta.url),
+          new URL(file, migrationsDirectory),
         ),
       );
     }

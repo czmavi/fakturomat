@@ -89,16 +89,14 @@ if (import.meta.main) {
       ) throw new Error(`Worker health contract failed (expected ${status})`);
     };
     await checkHealth(503); // The D1 schema does not exist yet.
-    for (
-      const file of [
-        "0001_schema.sql",
-        "0002_integrity.sql",
-        "0003_expense_details.sql",
-        "0004_user_management.sql",
-      ]
-    ) {
+    const migrationsDirectory = new URL("../migrations/d1/", import.meta.url);
+    const migrationFiles = Array.from(Deno.readDirSync(migrationsDirectory))
+      .filter((entry) => entry.isFile && /^\d+_.*\.sql$/.test(entry.name))
+      .map((entry) => entry.name)
+      .sort();
+    for (const file of migrationFiles) {
       const sql = await Deno.readTextFile(
-        new URL(`../migrations/d1/${file}`, import.meta.url),
+        new URL(file, migrationsDirectory),
       );
       for (const statement of splitSql(sql)) await db.prepare(statement).run();
     }
