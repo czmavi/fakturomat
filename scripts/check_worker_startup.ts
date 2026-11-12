@@ -51,8 +51,37 @@ if (import.meta.main) {
       });
     }
   }
+  const canary = "synthetic-collector-secret-not-for-client";
+  const exported: number[] = [];
+  const exceptionExport = Promise.withResolvers<void>();
+  let invalidExport = false;
   const mf = new Miniflare(convertV4MiniflareOptions({
     modules,
+    outboundService: async (request: Request) => {
+      const raw = await request.text();
+      const spans = JSON.parse(raw).resourceSpans[0].scopeSpans[0].spans;
+      const status = Number(
+        spans[0].attributes.find((a: { key: string }) =>
+          a.key === "http.response.status_code"
+        )?.value.intValue,
+      );
+      if (
+        request.url !== "https://controlpanel.caretsix.com/v1/traces" ||
+        request.method !== "POST" ||
+        request.headers.get("authorization") !== "Bearer " + canary ||
+        request.headers.has("origin") || request.headers.has("cookie") ||
+        request.headers.has("content-encoding") ||
+        spans.length !== 1 || raw.includes(canary) ||
+        (status >= 400 && spans[0].status.code !== 2)
+      ) invalidExport = true;
+      if (
+        status === 500 && spans[0].events?.length === 1 &&
+        spans[0].events[0].name === "exception"
+      ) exceptionExport.resolve();
+      exported.push(status);
+      // Exporter is unavailable for the entire application smoke test.
+      return new Response(null, { status: 503 });
+    },
     modulesRoot: resolve("_fresh/server"),
     compatibilityDate: "2026-10-18",
     compatibilityFlags: ["nodejs_compat"],
@@ -63,6 +92,7 @@ if (import.meta.main) {
     d1Databases: ["DB"],
     r2Buckets: ["DOCUMENTS", "FILES"],
     bindings: {
+      CONTROL_TELEMETRY_API_KEY: canary,
       APP_ENV: "production",
       BETTER_AUTH_URL: "https://fakturomat.test",
       BETTER_AUTH_SECRET: "synthetic-worker-test-secret-at-least-32-characters",
@@ -406,6 +436,23 @@ if (import.meta.main) {
     // Exercise the actual user-management page and creation flow in workerd.
     await db.prepare("UPDATE users SET is_admin = 1 WHERE id = ?").bind(id)
       .run();
+    const fixture = Deno.args.indexOf("--browser-fixture");
+    if (fixture >= 0) {
+      // Optional isolated browser QA input; only synthetic test data.
+      const form = await mf.dispatchFetch(
+        "https://fakturomat.test/organizations/new",
+        { headers: { cookie: requestCookie } },
+      );
+      if (form.status !== 200) throw new Error("Browser fixture failed");
+      await Deno.writeTextFile(
+        Deno.args[fixture + 1],
+        JSON.stringify({
+          html: await form.text(),
+          csp: form.headers.get("content-security-policy"),
+        }),
+        { createNew: true, mode: 0o600 },
+      );
+    }
     const management = await mf.dispatchFetch("https://fakturomat.test/users", {
       headers: { cookie: requestCookie },
     });
@@ -503,6 +550,33 @@ if (import.meta.main) {
       duplicate !== null ||
       await (await bucket.get("check.pdf"))?.text() !== "%PDF-test"
     ) throw new Error("R2 conditional put failed");
+    // Fail a route inside Fresh, which converts the exception to an HTTP 500.
+    // The test database is isolated and disposed immediately afterwards.
+    await db.prepare(
+      "ALTER TABLE organizations RENAME TO unavailable_organizations",
+    ).run();
+    const broken = await mf.dispatchFetch("https://fakturomat.test/dashboard", {
+      headers: { cookie: requestCookie },
+      redirect: "manual",
+    });
+    if (broken.status !== 500) throw new Error("Expected Fresh error response");
+    await broken.body?.cancel();
+    await Promise.race([
+      exceptionExport.promise,
+      new Promise<never>((_, reject) =>
+        AbortSignal.timeout(4000).addEventListener(
+          "abort",
+          () => reject(new Error("Missing exception event for Fresh 500")),
+        )
+      ),
+    ]);
+    if (invalidExport || !exported.includes(200) || !exported.includes(503)) {
+      throw new Error(
+        `Worker OTLP export contract failed: invalid=${invalidExport} status=${
+          exported.join(",")
+        }`,
+      );
+    }
     console.log(
       "Worker smoke passed: real workerd, D1 schema, scrypt login/session, SSR, invoice issuance with embedded fonts, authenticated PDF download, invoice deletion and number reuse, and conditional R2 writes.",
     );

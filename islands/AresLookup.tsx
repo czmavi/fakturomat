@@ -1,3 +1,4 @@
+import { browserTelemetry } from "@/client/telemetry.ts";
 import { useRef, useState } from "preact/hooks";
 import type { AresCompany } from "@/domain/ares/types.ts";
 
@@ -27,6 +28,10 @@ export default function AresLookup(
     }
     pending.current = true;
     setBusy(true);
+    const span = browserTelemetry()?.startSpan(
+      "contact.ares.lookup",
+    );
+    let failure: unknown;
     try {
       const response = await fetch(`/api/ares?ico=${encodeURIComponent(ico)}`);
       const result = await response.json();
@@ -69,6 +74,7 @@ export default function AresLookup(
           : "Údaje byly načteny z ARES. Před uložením je zkontrolujte.",
       );
     } catch (error) {
+      failure = error ?? new Error("Lookup failed");
       setFailed(true);
       setMessage(
         error instanceof Error
@@ -76,6 +82,7 @@ export default function AresLookup(
           : "Načtení z ARES se nezdařilo. Zkuste to znovu.",
       );
     } finally {
+      span?.end(failure);
       pending.current = false;
       setBusy(false);
     }

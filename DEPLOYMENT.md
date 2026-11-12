@@ -158,3 +158,47 @@ Před nasazením buildu se správou uživatelů aplikujte D1 migraci
 že účet existuje a po migraci má `is_admin = 1`. Přístup k současným i novým
 organizacím zajišťují členství a databázové triggery. Nové běžné účty mají
 výchozí `is_admin = 0` a zakládají se přes `/users`.
+
+## CaretSix Control: příjem traces
+
+Produkční backend je Cloudflare Worker (`server.js` → Fresh); Deno slouží pro
+vývoj a build. Ve Workeru se export dokončuje přes `ctx.waitUntil()`. Chybějící
+secret vypne pouze serverové traces. Exportuje se jeden malý OTLP/HTTP JSON span
+na požadavek obsloužený Workerem. Statické soubory vydané přímo Cloudflare
+Assets tímto vstupem neprocházejí. Span obsahuje metodu, stav a trvání; při
+výjimce event bez původní zprávy či stacku. URL, těla a hlavičky požadavku
+neexportujeme. Export se neopakuje, má timeout 3 s; lokální limit je 2 000
+spanů/min na izolát, společný limit napříč izoláty vynucuje Control (429).
+
+1. V CaretSix Control otevřete **Fakturomat → Traces**. Použijte serverový klíč
+   této aplikace; pokud ho nemá, vygenerujte ho. Rotace zneplatní starý klíč.
+2. V Cloudflare otevřete **Workers & Pages → fakturomat → Settings → Variables
+   and Secrets → Add**, typ **Secret**, název `CONTROL_TELEMETRY_API_KEY`,
+   hodnota je samotný klíč bez prefixu Bearer. Uložte pro produkční Worker. Klíč
+   nepatří do Vite proměnných, repozitáře ani klientského buildu.
+3. V Controlu nastavte produkční URL aplikace na
+   `https://fakturomat.caretsix.com` a v **Traces** zapněte **Enable browser
+   ingestion**. Sběr z prohlížeče používá přesný origin, nikoli klíč. Na
+   hostingu Controlu musí být veřejně dostupné cesty `/telemetry/browser-v1.js`
+   a `/v1/traces` (včetně preflight).
+4. Po nasazení otevřete veřejný `/health` a poté ve formuláři kontaktu použijte
+   **Načíst údaje z ARES podle IČO**. V **Traces** zkontrolujte zdroj server a
+   službu `fakturomat` (GET, HTTP 200) a samostatný zdroj browser, službu
+   `fakturomat-browser`, span `contact.ares.lookup`. V nástrojích prohlížeče
+   ověřte úspěšné načtení skriptu a OTLP POST bez Authorization.
+
+Lokální integrační test `deno task test:startup` používá syntetický klíč,
+workerd a mock exportér; nepotřebuje přístup do Controlu. Pro volitelný test v
+Chromiu nejprve připravte produkční build a jednorázový soubor stránky:
+
+```sh
+deno task build
+deno run -A scripts/check_worker_startup.ts --browser-fixture /tmp/fakturomat-telemetry-fixture.json
+node scripts/check_browser_telemetry.mjs /tmp/fakturomat-telemetry-fixture.json ../caretsix-control/static/telemetry/browser-v1.js
+```
+
+Poslední příkaz používá Playwright s Chromiem. Při instalaci mimo projekt lze
+nastavit `PLAYWRIGHT_MODULE` na jeho `index.mjs` a `CHROMIUM_PATH` na binárku.
+Test používá skutečný SDK skript z checkoutu Controlu, všechny HTTP požadavky
+zachytí lokální mock. Fixture obsahuje jen syntetický formulář a nesmí předem
+existovat.

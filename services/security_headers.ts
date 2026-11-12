@@ -44,13 +44,15 @@ function contentSecurityPolicy(
   return [
     "default-src 'self'",
     "base-uri 'self'",
-    "connect-src 'self'",
+    "connect-src 'self' https://controlpanel.caretsix.com/v1/traces",
     "font-src 'self'",
     "form-action 'self'",
     "frame-ancestors 'none'",
     "img-src 'self' data:",
     "object-src 'none'",
-    nonce ? `script-src 'self' 'nonce-${nonce}'` : "script-src 'self'",
+    `script-src 'self'${
+      nonce ? " 'nonce-" + nonce + "'" : ""
+    } https://controlpanel.caretsix.com/telemetry/browser-v1.js`,
     environment === "development"
       ? "style-src 'self' 'unsafe-inline'"
       : "style-src 'self'",
