@@ -44,7 +44,7 @@
     "miniflare": "npm:miniflare@5.20261012.1-beta",
     "pdf-lib": "npm:pdf-lib@1.17.1",
     "pg": "npm:pg@8.16.3",
-    "preact": "npm:preact@^10.29.1",
+    "preact": "npm:preact@^11.2.0",
     "@preact/signals": "npm:@preact/signals@^2.9.0",
     "@fresh/plugin-vite": "jsr:@fresh/plugin-vite@^1.1.2",
     "@std/path": "jsr:@std/path@^1.1.6",
