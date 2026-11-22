@@ -1,8 +1,8 @@
 import type { ContactFormInput } from "@/domain/contacts/types.ts";
 import { useEffect, useRef, useState } from "preact/hooks";
 import { createPortal } from "preact/compat";
-import type { JSX } from "preact";
 import ContactForm, {
+  type ContactFormProps,
   contactInputFromForm,
   EMPTY_CONTACT,
 } from "@/components/ContactForm.tsx";
@@ -39,7 +39,7 @@ export default function ContactSelect(props: Props) {
     if (open) dialog.current?.showModal();
   }, [open]);
 
-  const submit: JSX.SubmitEventHandler<HTMLFormElement> = async (event) => {
+  const submit: ContactFormProps["onSubmit"] = async (event) => {
     event.preventDefault();
     event.stopPropagation();
     if (pending.current) return;

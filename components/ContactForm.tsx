@@ -7,7 +7,7 @@ export interface ContactFormProps {
   csrfToken: string;
   error: string | null;
   submitLabel: string;
-  onSubmit?: JSX.SubmitEventHandler<HTMLFormElement>;
+  onSubmit?: JSX.IntrinsicElements["form"]["onSubmit"];
   submitting?: boolean;
 }
 
