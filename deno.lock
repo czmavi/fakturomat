@@ -35,15 +35,16 @@
     "npm:@aws-sdk/s3-request-presigner@^3.1132.0": "3.1132.0",
     "npm:@babel/core@^7.28.0": "7.29.7",
     "npm:@babel/preset-react@^7.27.1": "7.29.7_@babel+core@7.29.7",
-    "npm:@cloudflare/vite-plugin@^1.64.0": "1.64.0_vite@7.3.6_wrangler@4.151.1",
+    "npm:@cloudflare/vite-plugin@^1.64.0": "1.64.0_vite@7.3.6_wrangler@4.151.1_@types+node@26.5.0",
     "npm:@opentelemetry/api@^1.9.0": "1.9.1",
     "npm:@pdf-lib/fontkit@1.1.1": "1.1.1",
     "npm:@preact/signals@^2.5.1": "2.11.2_preact@10.29.8_preact-render-to-string@6.7.0",
     "npm:@preact/signals@^2.9.0": "2.11.2_preact@10.29.8_preact-render-to-string@6.7.0",
-    "npm:@prefresh/vite@^2.4.8": "2.4.12_preact@10.29.8_vite@7.3.6_preact-render-to-string@6.7.0",
+    "npm:@prefresh/vite@^2.4.8": "2.4.12_preact@10.29.8_vite@7.3.6_@types+node@26.5.0",
     "npm:@remix-run/node-fetch-server@0.12": "0.12.0",
-    "npm:@tailwindcss/vite@^4.1.12": "4.3.3_vite@7.3.6",
+    "npm:@tailwindcss/vite@^4.1.12": "4.3.3_vite@7.3.6_@types+node@26.5.0",
     "npm:@types/babel__core@^7.20.5": "7.20.5",
+    "npm:@types/node@26.5.0": "26.5.0",
     "npm:@types/pg@8.15.5": "8.15.5",
     "npm:@types/qrcode@^1.5.6": "1.5.6",
     "npm:better-auth@1.6.26": "1.6.26_pg@8.16.3_@opentelemetry+api@1.9.1",
@@ -62,8 +63,8 @@
     "npm:qrcode@1.5.4": "1.5.4",
     "npm:rollup@^4.55.1": "4.63.1",
     "npm:tailwindcss@^4.1.10": "4.3.3",
-    "npm:vite@^7.1.3": "7.3.6",
-    "npm:vite@^7.1.4": "7.3.6",
+    "npm:vite@^7.1.3": "7.3.6_@types+node@26.5.0",
+    "npm:vite@^7.1.4": "7.3.6_@types+node@26.5.0",
     "npm:wrangler@^4.151.1": "4.151.1"
   },
   "jsr": {
@@ -672,7 +673,7 @@
         "workerd"
       ]
     },
-    "@cloudflare/vite-plugin@1.64.0_vite@7.3.6_wrangler@4.151.1": {
+    "@cloudflare/vite-plugin@1.64.0_vite@7.3.6_wrangler@4.151.1_@types+node@26.5.0": {
       "integrity": "sha512-h7Tunx9Ou5fUoao8O9jYTH0ParfrtNZzZVPA0IS19O7AoWA1SpYjwzDA6pZC78qzuV8sQSEOpYCN/yTShmd+gg==",
       "dependencies": [
         "@cloudflare/unenv-preset",
@@ -1388,7 +1389,7 @@
     "@prefresh/utils@1.2.1": {
       "integrity": "sha512-vq/sIuN5nYfYzvyayXI4C2QkprfNaHUQ9ZX+3xLD8nL3rWyzpxOm1+K7RtMbhd+66QcaISViK7amjnheQ/4WZw=="
     },
-    "@prefresh/vite@2.4.12_preact@10.29.8_vite@7.3.6_preact-render-to-string@6.7.0": {
+    "@prefresh/vite@2.4.12_preact@10.29.8_vite@7.3.6_@types+node@26.5.0": {
       "integrity": "sha512-FY1fzXpUjiuosznMV0YM7XAOPZjB5FIdWS0W24+XnlxYkt9hNAwwsiKYn+cuTEoMtD/ZVazS5QVssBr9YhpCQA==",
       "dependencies": [
         "@babel/core",
@@ -1543,7 +1544,8 @@
       "dependencies": [
         "@smithy/types",
         "tslib@2.8.1"
-      ]
+      ],
+      "deprecated": true
     },
     "@smithy/credential-provider-imds@4.5.2": {
       "integrity": "sha512-A9uSdn72ozbRUSit0eib0TW7nXuNPlaeM0zcGkJ+nE6tFcSDbnmtwoxbTCFBukVQcszDAyvsd7+rTduPTXpygg==",
@@ -1677,7 +1679,7 @@
         "@tailwindcss/oxide-win32-x64-msvc"
       ]
     },
-    "@tailwindcss/vite@4.3.3_vite@7.3.6": {
+    "@tailwindcss/vite@4.3.3_vite@7.3.6_@types+node@26.5.0": {
       "integrity": "sha512-yYU8cogLeSh/ms2jh8Fj7jaba/EWa7Ja6GoUqYZaraEuCI5YS6ms6ObZgjjedm+jm6XZjdNRWBpPP6Z86oOxcw==",
       "dependencies": [
         "@tailwindcss/node",
@@ -2471,9 +2473,10 @@
       ],
       "bin": true
     },
-    "vite@7.3.6": {
+    "vite@7.3.6_@types+node@26.5.0": {
       "integrity": "sha512-4XP60spRGjSZFf1qYH+dJIkK2znL3zQfl9KkOV9MkkRR/3Dls0dxaBsQPTloEc5BLXWPL9vsOxopxyKoMmDueg==",
       "dependencies": [
+        "@types/node",
         "esbuild@0.28.2",
         "fdir",
         "picomatch@4.0.7",
@@ -2483,6 +2486,9 @@
       ],
       "optionalDependencies": [
         "fsevents"
+      ],
+      "optionalPeers": [
+        "@types/node"
       ],
       "bin": true
     },
@@ -2594,6 +2600,7 @@
       "npm:@preact/signals@^2.9.0",
       "npm:@tailwindcss/vite@^4.1.12",
       "npm:@types/babel__core@^7.20.5",
+      "npm:@types/node@26.5.0",
       "npm:@types/pg@8.15.5",
       "npm:@types/qrcode@^1.5.6",
       "npm:better-auth@1.6.26",

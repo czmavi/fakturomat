@@ -83,6 +83,7 @@
       "template"
     ],
     "types": [
+      "npm:@types/node@26.5.0",
       "vite/client"
     ]
   }

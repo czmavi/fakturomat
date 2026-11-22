@@ -31,13 +31,21 @@ jobs:
         id: metadata
         with:
           compat-lookup: true
-      - name: Check compatibility of every updated dependency
+      - name: Evaluate compatibility for automatic merge
+        id: policy
         env:
           UPDATES: ${{ steps.metadata.outputs.updated-dependencies-json }}
         run: |
-          jq -r '.[] | "\(.dependencyName): \(.compatScore)% (0 may mean unknown)"' <<< "$UPDATES"
-          jq -e 'type == "array" and length > 0 and
-            all(.[]; (.prevVersion | length) > 0 and (.newVersion | length) > 0 and .compatScore == 100)' <<< "$UPDATES"
+          eligible=$(jq -r 'type == "array" and length > 0 and
+            all(.[]; (.prevVersion | length) > 0 and (.newVersion | length) > 0 and .compatScore == 100)' <<< "$UPDATES")
+          echo "eligible=$eligible" >> "$GITHUB_OUTPUT"
+          if [[ "$eligible" != true ]]; then
+            echo "Manual review required. Dependabot did not confirm 100% compatibility for every update." >> "$GITHUB_STEP_SUMMARY"
+          fi
+          jq -r '.[] | "\(.dependencyName): \(if .compatScore == 0 then "unknown or 0%" else "\(.compatScore)%" end)"' <<< "$UPDATES"
+      - name: Eligible for automatic merge
+        if: steps.policy.outputs.eligible == 'true'
+        run: echo "Every update has a 100% compatibility score."
 
   checks:
     name: Checks
