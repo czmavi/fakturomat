@@ -1,6 +1,7 @@
-name: Deploy production
+name: CI and deploy
 
 on:
+  pull_request:
   push:
     branches: [main]
   workflow_dispatch:
@@ -9,21 +10,19 @@ permissions:
   contents: read
 
 concurrency:
-  group: fakturomat-production
-  cancel-in-progress: false
+  group: ${{ github.ref == 'refs/heads/main' && 'fakturomat-production' || format('fakturomat-ci-{0}', github.run_id) }}
+  queue: max
+
+env:
+  CI: "true"
+  WRANGLER_SEND_METRICS: "false"
+  DENO_NO_UPDATE_CHECK: "1"
 
 jobs:
-  deploy:
-    if: github.ref == 'refs/heads/main'
+  checks:
+    name: Checks
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    environment:
-      name: production
-      url: https://fakturomat.caretsix.com
-    env:
-      CI: "true"
-      WRANGLER_SEND_METRICS: "false"
-      DENO_NO_UPDATE_CHECK: "1"
     steps:
       - uses: actions/checkout@v7
         with:
@@ -39,6 +38,42 @@ jobs:
         run: deno task test
       - name: Build and test in Workers runtime
         run: deno task test:startup
+      - name: Save tested build for deployment
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v7
+        with:
+          name: worker-build
+          overwrite: true
+          if-no-files-found: error
+          include-hidden-files: true
+          path: |
+            _fresh/client/
+            _fresh/server/*.mjs
+            _fresh/server/*.mjs.map
+            _fresh/server/assets/
+            _fresh/server/wrangler.json
+
+  deploy:
+    needs: checks
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment:
+      name: production
+      url: https://fakturomat.caretsix.com
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.9.7
+      - name: Install locked dependencies
+        run: deno install --frozen-lockfile --allow-scripts=npm:esbuild,npm:workerd
+      - uses: actions/download-artifact@v8
+        with:
+          name: worker-build
+          path: _fresh
       - name: Apply D1 migrations and deploy tested build
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}

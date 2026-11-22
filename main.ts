@@ -1,4 +1,7 @@
-import { recordRequestException } from "@/services/request_telemetry.ts";
+import {
+  recordRequestException,
+  recordRequestRoute,
+} from "@/services/request_telemetry.ts";
 import { App, csrf, staticFiles } from "fresh";
 import { requestContextMiddleware } from "@/services/request_context_middleware.ts";
 import type { State } from "./utils.ts";
@@ -6,6 +9,7 @@ import type { State } from "./utils.ts";
 export const app = new App<State>();
 
 app.use(async (ctx) => {
+  recordRequestRoute(ctx.route);
   try {
     const response = await ctx.next();
     if (ctx.error != null) recordRequestException();

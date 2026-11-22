@@ -2,6 +2,7 @@ import { strict as assert } from "node:assert";
 import {
   createHttpTracer,
   recordRequestException,
+  recordRequestRoute,
 } from "@/services/request_telemetry.ts";
 
 Deno.test("OTLP mock receives bounded sanitized success, failure and exception spans after response", async () => {
@@ -72,4 +73,61 @@ Deno.test("OTLP mock receives bounded sanitized success, failure and exception s
     spans.map((s) => s.events.map((e: { name: string }) => e.name)),
     [[], [], ["exception"], ["exception"]],
   );
+});
+
+Deno.test("Fresh route appears in sanitized request URL even on error; unmatched paths stay private", async () => {
+  const { App } = await import("fresh");
+  const app = new App();
+  app.use((ctx) => {
+    recordRequestRoute(ctx.route);
+    return ctx.next();
+  });
+  app.get(
+    "/o/:org/invoices/:invoice",
+    () => new Response(null, { status: 503 }),
+  );
+  app.get("/health", () => new Response("ok"));
+  const handler = app.handler();
+  const spans: {
+    name: string;
+    attributes: { key: string; value: { stringValue?: string } }[];
+  }[] = [];
+  const trace = createHttpTracer((_url, init) => {
+    const body = String(init?.body);
+    assert.ok(!body.includes("private") && !body.includes("session"));
+    spans.push(JSON.parse(body).resourceSpans[0].scopeSpans[0].spans[0]);
+    return Promise.resolve(new Response(null, { status: 204 }));
+  });
+  const pending: Promise<void>[] = [];
+  for (
+    const path of [
+      "/o/private-org/invoices/private-id",
+      "/private@example.test",
+      "/health",
+    ]
+  ) {
+    const req = new Request(
+      "https://example.test" + path + "?session=private#private",
+    );
+    await trace(req, "key", {
+      waitUntil(p) {
+        pending.push(p);
+      },
+    }, () => handler(req));
+  }
+  await Promise.all(pending);
+  assert.deepEqual(spans.map((s) => s.name), [
+    "GET /o/:org/invoices/:invoice",
+    "GET",
+    "GET /health",
+  ]);
+  const attr = (i: number, key: string) =>
+    spans[i].attributes.find((a) => a.key === key)?.value.stringValue;
+  assert.equal(attr(0, "http.route"), "/o/:org/invoices/:invoice");
+  assert.equal(
+    attr(0, "url.full"),
+    "https://example.test/o/:org/invoices/:invoice",
+  );
+  assert.equal(attr(1, "url.full"), undefined);
+  assert.equal(attr(2, "url.full"), "https://example.test/health");
 });

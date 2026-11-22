@@ -7,9 +7,11 @@ nasazení, přenos PostgreSQL dat a přepnutí domény popisuje
 
 ## Automatické nasazení z GitHubu
 
-Workflow [deploy.yml](.github/workflows/deploy.yml) se spouští při každém pushi
-(nebo merge pull requestu) do `main`. Ruční spuštění je v GitHub → Actions →
-Deploy production → Run workflow, také pouze pro `main`.
+Workflow [CI and deploy](.github/workflows/deploy.yml) spouští stejné kontroly
+při otevření, znovuotevření a aktualizaci pull requestu i při každém pushi do
+`main`. Po úspěšných kontrolách na `main` následuje nasazení do produkce. Ruční
+nasazení lze spustit přes GitHub → Actions → CI and deploy → Run workflow
+výběrem větve `main`.
 
 ### Jednorázové nastavení
 
@@ -50,14 +52,15 @@ Deploy production → Run workflow, také pouze pro `main`.
    Průběh sledujte v
    [GitHub Actions](https://github.com/czmavi/fakturomat/actions).
 
-### Co se provede při pushi
+### Kontroly a nasazení
 
 Workflow nainstaluje Deno 2.9.7 a závislosti podle lockfile, spustí formátování,
 lint, typy a všechny testy, sestaví aplikaci a ověří ji v izolovaném workerd.
-Teprve potom s produkčním tokenem aplikuje dosud neprovedené D1 migrace a nasadí
-přesně tento build z `_fresh/server/wrangler.json`. Nakonec až šestkrát ověří
-veřejný `/health`: HTTP 200, správný JSON, no-store, bez redirectu či cookies.
-Kontrola dostupnosti sama nepotvrzuje, kterou verzi kódu obsluhuje doména.
+Tím běh pro pull request končí. Na `main` si krok nasazení převezme otestovaný
+build, s produkčním tokenem aplikuje dosud neprovedené D1 migrace a nasadí
+Worker z `_fresh/server/wrangler.json`. Nakonec až šestkrát ověří veřejný
+`/health`: HTTP 200, správný JSON, no-store, bez redirectu či cookies. Kontrola
+dostupnosti sama nepotvrzuje, kterou verzi kódu obsluhuje doména.
 
 Nasazení se nepřekrývají a nový push nepřeruší probíhající migraci. Chyba
 kontrol nebo migrace zastaví deploy. Chyba healthchecku označí workflow jako
@@ -166,9 +169,12 @@ vývoj a build. Ve Workeru se export dokončuje přes `ctx.waitUntil()`. Chyběj
 secret vypne pouze serverové traces. Exportuje se jeden malý OTLP/HTTP JSON span
 na požadavek obsloužený Workerem. Statické soubory vydané přímo Cloudflare
 Assets tímto vstupem neprocházejí. Span obsahuje metodu, stav a trvání; při
-výjimce event bez původní zprávy či stacku. URL, těla a hlavičky požadavku
-neexportujeme. Export se neopakuje, má timeout 3 s; lokální limit je 2 000
-spanů/min na izolát, společný limit napříč izoláty vynucuje Control (429).
+výjimce event bez původní zprávy či stacku. U rozpoznaných tras obsahuje název
+spanu metodu a šablonu Fresh (`http.route`). V atributu `url.full` je origin a
+tato šablona; hodnoty parametrů, query, fragment, těla ani hlavičky se
+neposílají. Bez shody s trasou URL vynecháváme. Export se neopakuje, má timeout
+3 s; lokální limit je 2 000 spanů/min na izolát, společný limit napříč izoláty
+vynucuje Control (429).
 
 1. V CaretSix Control otevřete **Fakturomat → Traces**. Použijte serverový klíč
    této aplikace; pokud ho nemá, vygenerujte ho. Rotace zneplatní starý klíč.

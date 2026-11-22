@@ -1,7 +1,17 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 
 const endpoint = "https://controlpanel.caretsix.com/v1/traces";
-const current = new AsyncLocalStorage<{ exception: boolean }>();
+interface RequestTrace {
+  exception: boolean;
+  route?: string;
+}
+const current = new AsyncLocalStorage<RequestTrace>();
+
+// Pass only Fresh's registered route pattern, never the request pathname.
+export function recordRequestRoute(route: string | null) {
+  const state = current.getStore();
+  if (state && route?.startsWith("/")) state.route = route;
+}
 const methods = new Set([
   "GET",
   "HEAD",
@@ -25,7 +35,7 @@ export function recordRequestException() {
 }
 
 // No cross-request queue: Workers I/O belongs to the originating request.
-// Send one bounded span, never a URL, arbitrary method, error text, stack or headers.
+// Send one bounded span, never a raw request target, arbitrary method, error text, stack or headers.
 export function createHttpTracer(send: typeof fetch = fetch) {
   let times: number[] = [], blockedUntil = 0;
   async function exportSpan(
@@ -33,7 +43,8 @@ export function createHttpTracer(send: typeof fetch = fetch) {
     method: string,
     start: number,
     status: number | undefined,
-    exception: boolean,
+    { exception, route }: RequestTrace,
+    request: Request,
   ) {
     const now = Date.now();
     if (now < blockedUntil) return;
@@ -47,6 +58,15 @@ export function createHttpTracer(send: typeof fetch = fetch) {
     }[] = [
       { key: "http.request.method", value: { stringValue: method } },
     ];
+    if (route) {
+      attributes.push(
+        { key: "http.route", value: { stringValue: route } },
+        {
+          key: "url.full",
+          value: { stringValue: new URL(request.url).origin + route },
+        },
+      );
+    }
     if (status !== undefined) {
       attributes.push({
         key: "http.response.status_code",
@@ -56,7 +76,7 @@ export function createHttpTracer(send: typeof fetch = fetch) {
     const span = {
       traceId: id(16),
       spanId: id(8),
-      name: method,
+      name: route ? method + " " + route : method,
       kind: 2,
       startTimeUnixNano: nano(start),
       endTimeUnixNano: end,
@@ -121,7 +141,7 @@ export function createHttpTracer(send: typeof fetch = fetch) {
     } finally {
       const method = methods.has(request.method) ? request.method : "_OTHER";
       ctx.waitUntil(
-        exportSpan(key, method, start, status, state.exception).catch(() => {}),
+        exportSpan(key, method, start, status, state, request).catch(() => {}),
       );
     }
   };
