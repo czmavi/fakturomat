@@ -87,5 +87,14 @@
       "@types/node",
       "vite/client"
     ]
+  },
+  "scopes": {
+    "https://jsr.io/@fresh/core/2.3.3/": {
+      "npm:preact@^10.29.1": "npm:preact@^11.2.0",
+      "npm:/preact@^10.29.1/debug": "npm:preact@^11.2.0/debug",
+      "npm:/preact@^10.29.1/hooks": "npm:preact@^11.2.0/hooks",
+      "npm:/preact@^10.29.1/jsx-runtime": "npm:preact@^11.2.0/jsx-runtime",
+      "npm:preact-render-to-string@^6.6.3": "npm:preact-render-to-string@6.8.3"
+    }
   }
 }
