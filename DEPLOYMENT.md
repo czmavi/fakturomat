@@ -68,6 +68,22 @@ neúspěšné, ale již nasazený Worker ani migrace se automaticky nevracejí z
 migrace proto pište zpětně kompatibilně se stávající verzí aplikace. Workflow
 neprovádí import PostgreSQL, reset databáze ani opakované vytváření uživatelů.
 
+### Automatické slučování Dependabot PR
+
+Po úspěšném CI může workflow `Merge Dependabot updates` sloučit do `main` PR s
+podepsaným aktualizačním commitem od Dependabotu. Každá aktualizovaná závislost
+musí mít pro daný přechod skóre kompatibility 100 %. Při chybějícím skóre
+zůstane PR k ručnímu posouzení. Štítkem `compatibility-issue` lze automatické
+sloučení zastavit i při zeleném CI.
+
+Do **Settings → Secrets and variables → Actions** přidejte repository secret
+`DEPENDABOT_MERGE_TOKEN`. Použijte fine-grained PAT omezený na tento repozitář s
+oprávněním **Contents: Read and write**, pro aktualizace souborů v
+`.github/workflows` také **Workflows: Read and write**. Token použije až
+poslední krok pro merge konkrétního otestovaného SHA. Push po sloučení tím
+spustí běžné produkční CI a nasazení. Po obnovení tokenu lze neúspěšný merge job
+zopakovat.
+
 ## Běžný release
 
 1. Ověřte `deno task check`, `deno task test` a `deno task test:startup`.

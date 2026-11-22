@@ -1,0 +1,72 @@
+name: Merge Dependabot updates
+
+on:
+  workflow_run:
+    workflows: ["CI and deploy"]
+    types: [completed]
+
+permissions:
+  contents: read
+  checks: read
+  statuses: read
+  pull-requests: read
+  actions: read
+
+jobs:
+  merge:
+    if: >-
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_repository.full_name == github.repository &&
+      startsWith(github.event.workflow_run.head_branch, 'dependabot/')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+    steps:
+      - name: Verify the PR and all current checks
+        id: eligible
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+        run: |
+          set -euo pipefail
+          pulls=$(gh api --method GET "repos/$GITHUB_REPOSITORY/pulls" \
+            -f state=open -f base=main -f head="$GITHUB_REPOSITORY_OWNER:$HEAD_BRANCH")
+          number=$(jq -r --arg sha "$HEAD_SHA" --arg repo "$GITHUB_REPOSITORY" '
+            .[] | select(.head.sha == $sha and .head.repo.full_name == $repo and
+              .user.login == "dependabot[bot]" and .draft == false) | .number' <<< "$pulls")
+          if [[ -z "$number" ]]; then exit 0; fi
+
+          # The compatibility metadata describes Dependabot's signed update commit.
+          commits=$(gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/pulls/$number/commits")
+          jq -e --arg sha "$HEAD_SHA" 'flatten | length == 1 and
+            .[0].sha == $sha and .[0].author.login == "dependabot[bot]" and
+            .[0].commit.verification.verified == true' <<< "$commits"
+
+          gh pr checks "$number" --repo "$GITHUB_REPOSITORY" --watch --fail-fast
+          checks=$(gh pr checks "$number" --repo "$GITHUB_REPOSITORY" --json workflow,name,state)
+          jq -e '
+            any(.[]; .workflow == "CI and deploy" and .name == "Checks" and .state == "SUCCESS") and
+            any(.[]; .workflow == "CI and deploy" and .name == "Dependabot compatibility" and .state == "SUCCESS") and
+            all(.[]; .state == "SUCCESS" or
+              (.workflow == "CI and deploy" and .name == "deploy" and .state == "SKIPPED"))
+          ' <<< "$checks"
+          pr=$(gh pr view "$number" --repo "$GITHUB_REPOSITORY" \
+            --json baseRefName,headRefOid,isDraft,labels,mergeStateStatus,reviewDecision,state)
+          jq -e --arg sha "$HEAD_SHA" '.state == "OPEN" and .headRefOid == $sha and
+            .baseRefName == "main" and .isDraft == false and .mergeStateStatus == "CLEAN" and
+            all(.labels[]; .name != "compatibility-issue") and
+            (.reviewDecision != "CHANGES_REQUESTED" and .reviewDecision != "REVIEW_REQUIRED")' <<< "$pr"
+          echo "number=$number" >> "$GITHUB_OUTPUT"
+
+      - name: Merge the tested commit
+        if: steps.eligible.outputs.number != ''
+        env:
+          GH_TOKEN: ${{ secrets.DEPENDABOT_MERGE_TOKEN }}
+          PR_NUMBER: ${{ steps.eligible.outputs.number }}
+        run: |
+          set -euo pipefail
+          : "${GH_TOKEN:?Set the DEPENDABOT_MERGE_TOKEN Actions secret}"
+          gh api --method PUT "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/merge" \
+            -f sha="$HEAD_SHA" -f merge_method=merge | jq -e '.merged == true'
