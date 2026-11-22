@@ -8,7 +8,7 @@
     "migrate:local": "wrangler d1 migrations apply DB --local",
     "user:create": "deno run --allow-env --allow-read --allow-write --env-file=.dev.vars scripts/create_user.ts",
     "dev": "deno task build && deno task start",
-    "build": "vite build",
+    "build": "vite build --configLoader native",
     "start": "wrangler dev --config _fresh/server/wrangler.json --port 5173 --persist-to .wrangler/state",
     "update": "deno run -A -r jsr:@fresh/update .",
     "deploy": "deno task build && wrangler deploy",
