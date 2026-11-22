@@ -38,9 +38,9 @@
     "npm:@cloudflare/vite-plugin@^1.70.0": "1.70.1_vite@7.3.6__@types+node@26.6.6_wrangler@4.164.0_@types+node@26.6.6",
     "npm:@opentelemetry/api@^1.9.0": "1.9.1",
     "npm:@pdf-lib/fontkit@1.1.1": "1.1.1",
-    "npm:@preact/signals@^2.11.4": "2.11.4_preact@10.29.8__preact-render-to-string@6.7.0",
-    "npm:@preact/signals@^2.5.1": "2.11.4_preact@10.29.8__preact-render-to-string@6.7.0",
-    "npm:@prefresh/vite@^2.4.8": "2.4.12_preact@10.29.8__preact-render-to-string@6.7.0_vite@7.3.6__@types+node@26.6.6_@types+node@26.6.6",
+    "npm:@preact/signals@^2.11.4": "2.11.4_preact@11.2.0__preact-render-to-string@6.7.0_preact-render-to-string@6.7.0__preact@11.2.0",
+    "npm:@preact/signals@^2.5.1": "2.11.4_preact@11.2.0__preact-render-to-string@6.7.0_preact-render-to-string@6.7.0__preact@11.2.0",
+    "npm:@prefresh/vite@^2.4.8": "2.4.12_preact@11.2.0__preact-render-to-string@6.7.0_vite@7.3.6__@types+node@26.6.6_preact-render-to-string@6.7.0__preact@11.2.0",
     "npm:@remix-run/node-fetch-server@0.12": "0.12.0",
     "npm:@tailwindcss/vite@^4.3.5": "4.3.5_vite@7.3.6__@types+node@26.6.6_@types+node@26.6.6",
     "npm:@types/babel__core@^7.20.5": "7.20.5",
@@ -57,9 +57,10 @@
     "npm:pdf-lib@1.17.1": "1.17.1",
     "npm:pg@8.23.1": "8.23.1",
     "npm:postgres@^4.1.1": "4.1.1",
-    "npm:preact-render-to-string@^6.6.3": "6.7.0_preact@10.29.8",
-    "npm:preact@^10.28.2": "10.29.8_preact-render-to-string@6.7.0",
-    "npm:preact@^10.29.1": "10.29.8_preact-render-to-string@6.7.0",
+    "npm:preact-render-to-string@^6.6.3": "6.7.0_preact@11.2.0",
+    "npm:preact@^10.28.2": "10.29.8_preact-render-to-string@6.7.0__preact@11.2.0",
+    "npm:preact@^10.29.1": "10.29.8_preact-render-to-string@6.7.0__preact@11.2.0",
+    "npm:preact@^11.2.0": "11.2.0_preact-render-to-string@6.7.0",
     "npm:qrcode@1.5.4": "1.5.4",
     "npm:rollup@^4.55.1": "4.63.1",
     "npm:tailwindcss@^4.3.5": "4.3.5",
@@ -1436,26 +1437,26 @@
     "@preact/signals-core@1.14.5": {
       "integrity": "sha512-vcRv7Ityz5JVmeiVqIluLFzT/PDS/AlhHUpw3/aUWqcVUs6bDGIPXE/6RSC4evBNWYvnniozg5Syfj33al3gkg=="
     },
-    "@preact/signals@2.11.4_preact@10.29.8__preact-render-to-string@6.7.0": {
+    "@preact/signals@2.11.4_preact@11.2.0__preact-render-to-string@6.7.0_preact-render-to-string@6.7.0__preact@11.2.0": {
       "integrity": "sha512-Rb+5RPo9gWSaHtzJeauhHxiC8KP/IF2DEPkHPEOGOnuy2wnJzRqyeLRankUCYd6ADqtxS6GnWGv6Ie343d8aYw==",
       "dependencies": [
         "@preact/signals-core",
-        "preact"
+        "preact@11.2.0_preact-render-to-string@6.7.0"
       ]
     },
     "@prefresh/babel-plugin@0.5.3": {
       "integrity": "sha512-57LX2SHs4BX2s1IwCjNzTE2OJeEepRCNf1VTEpbNcUyHfMO68eeOWGDIt4ob9aYlW6PEWZ1SuwNikuoIXANDtQ=="
     },
-    "@prefresh/core@1.5.11_preact@10.29.8__preact-render-to-string@6.7.0_preact-render-to-string@6.7.0__preact@10.29.8": {
+    "@prefresh/core@1.5.11_preact@11.2.0__preact-render-to-string@6.7.0_preact-render-to-string@6.7.0__preact@11.2.0": {
       "integrity": "sha512-Ml00PP8jeHaADxfQqxUs4+M5JS+T5J26UnvPVfsrmlpGw2I3e9XtM0DMeuzkmvg+Tn7VdHSMpLBrDPG0iHoDqQ==",
       "dependencies": [
-        "preact"
+        "preact@11.2.0_preact-render-to-string@6.7.0"
       ]
     },
     "@prefresh/utils@1.2.1": {
       "integrity": "sha512-vq/sIuN5nYfYzvyayXI4C2QkprfNaHUQ9ZX+3xLD8nL3rWyzpxOm1+K7RtMbhd+66QcaISViK7amjnheQ/4WZw=="
     },
-    "@prefresh/vite@2.4.12_preact@10.29.8__preact-render-to-string@6.7.0_vite@7.3.6__@types+node@26.6.6_@types+node@26.6.6": {
+    "@prefresh/vite@2.4.12_preact@11.2.0__preact-render-to-string@6.7.0_vite@7.3.6__@types+node@26.6.6_preact-render-to-string@6.7.0__preact@11.2.0": {
       "integrity": "sha512-FY1fzXpUjiuosznMV0YM7XAOPZjB5FIdWS0W24+XnlxYkt9hNAwwsiKYn+cuTEoMtD/ZVazS5QVssBr9YhpCQA==",
       "dependencies": [
         "@babel/core",
@@ -1463,7 +1464,7 @@
         "@prefresh/core",
         "@prefresh/utils",
         "@rollup/pluginutils",
-        "preact",
+        "preact@11.2.0_preact-render-to-string@6.7.0",
         "vite"
       ]
     },
@@ -2564,14 +2565,23 @@
     "postgres@4.1.1": {
       "integrity": "sha512-1kJDojqNZC+iTHHXh6eif0J98LUtyLAePe/qkW1GK35eh2JixlsAiIKq3FGI+xqI+SUGTNodzf7TScVeIIyUug=="
     },
-    "preact-render-to-string@6.7.0_preact@10.29.8": {
+    "preact-render-to-string@6.7.0_preact@11.2.0": {
       "integrity": "sha512-Z4WR8fmLMRpdYqJ9i7vrlXSsSrxVJydwrkEXHapexfARbWfGb7vGcnvNQnIzN0cXciMVOlz/XLoiMCi9gUsy9Q==",
       "dependencies": [
-        "preact"
+        "preact@11.2.0_preact-render-to-string@6.7.0"
       ]
     },
-    "preact@10.29.8_preact-render-to-string@6.7.0": {
+    "preact@10.29.8_preact-render-to-string@6.7.0__preact@11.2.0": {
       "integrity": "sha512-ej2aVZ+vZ8WO7tvlQWRM9N63A0KzF9q4mWJfDUHgYaIofWY9hu74QdnQrjoPMmZi2/nZ5gN0bJCQF49xQqx09Q==",
+      "dependencies": [
+        "preact-render-to-string"
+      ],
+      "optionalPeers": [
+        "preact-render-to-string"
+      ]
+    },
+    "preact@11.2.0_preact-render-to-string@6.7.0": {
+      "integrity": "sha512-/HfHI/7N84e6GrWBJ3J280z3mLaRJiDcSvj/A+y/4AbLnND/1UlGHe1sR6oYuTGwId0nP7dqDU9OnLxMPZ7xBg==",
       "dependencies": [
         "preact-render-to-string"
       ],
@@ -2829,7 +2839,7 @@
       "integrity": "sha512-WwM+DL4F+zvz1id0CAPa06CAmTb6nOq1adR+Dy5AdwDsDXH5xDjSmDUUBQQN8KgSEuPCOLvzkrdMDUODIDml1A==",
       "dependencies": [
         "@cloudflare/kv-asset-handler@0.5.0",
-        "@cloudflare/unenv-preset@2.16.2_unenv@2.0.0-rc.24_workerd@1.20261117.1",
+        "@cloudflare/unenv-preset@2.16.2_unenv@2.0.0-rc.24_workerd@1.20261119.1",
         "@cspotcode/source-map-support",
         "blake3-wasm",
         "esbuild@0.28.2",
@@ -2954,7 +2964,7 @@
       "npm:pdf-lib@1.17.1",
       "npm:pg@8.23.1",
       "npm:postgres@^4.1.1",
-      "npm:preact@^10.29.1",
+      "npm:preact@^11.2.0",
       "npm:qrcode@1.5.4",
       "npm:tailwindcss@^4.3.5",
       "npm:vite@^7.1.3",
