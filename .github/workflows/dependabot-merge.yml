@@ -29,6 +29,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          CI_RUN_ID: ${{ github.event.workflow_run.id }}
+          CI_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
         run: |
           set -euo pipefail
           pulls=$(gh api --method GET "repos/$GITHUB_REPOSITORY/pulls" \
@@ -37,6 +39,15 @@ jobs:
             .[] | select(.head.sha == $sha and .head.repo.full_name == $repo and
               .user.login == "dependabot[bot]" and .draft == false) | .number' <<< "$pulls")
           if [[ -z "$number" ]]; then exit 0; fi
+
+          jobs=$(gh api --paginate --slurp \
+            "repos/$GITHUB_REPOSITORY/actions/runs/$CI_RUN_ID/attempts/$CI_ATTEMPT/jobs")
+          if ! jq -e 'any(.[].jobs[]; .name == "Dependabot compatibility" and
+            .conclusion == "success" and any(.steps[]?; .name == "Eligible for automatic merge" and
+            .conclusion == "success"))' <<< "$jobs" > /dev/null; then
+            echo "No automatic merge approval for this CI run. Leaving PR open for review."
+            exit 0
+          fi
 
           # The compatibility metadata describes Dependabot's signed update commit.
           commits=$(gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/pulls/$number/commits")

@@ -72,9 +72,9 @@ neprovádí import PostgreSQL, reset databáze ani opakované vytváření uživ
 
 Po úspěšném CI může workflow `Merge Dependabot updates` sloučit do `main` PR s
 podepsaným aktualizačním commitem od Dependabotu. Každá aktualizovaná závislost
-musí mít pro daný přechod skóre kompatibility 100 %. Při chybějícím skóre
-zůstane PR k ručnímu posouzení. Štítkem `compatibility-issue` lze automatické
-sloučení zastavit i při zeleném CI.
+musí mít pro daný přechod skóre kompatibility 100 %. Při nižším nebo neznámém
+skóre může CI úspěšně projít a PR zůstane k ručnímu posouzení. Štítkem
+`compatibility-issue` lze automatické sloučení zastavit i při zeleném CI.
 
 Do **Settings → Secrets and variables → Actions** přidejte repository secret
 `DEPENDABOT_MERGE_TOKEN`. Použijte fine-grained PAT omezený na tento repozitář s

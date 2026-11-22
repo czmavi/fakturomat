@@ -36,6 +36,7 @@
     "@aws-sdk/s3-request-presigner": "npm:@aws-sdk/s3-request-presigner@^3.1132.0",
     "@cloudflare/vite-plugin": "npm:@cloudflare/vite-plugin@^1.64.0",
     "@pdf-lib/fontkit": "npm:@pdf-lib/fontkit@1.1.1",
+    "@types/node": "npm:@types/node@26.5.0",
     "@types/pg": "npm:@types/pg@8.15.5",
     "better-auth": "npm:better-auth@1.6.26",
     "dejavu-fonts-ttf": "npm:dejavu-fonts-ttf@2.37.3",
@@ -83,6 +84,7 @@
       "template"
     ],
     "types": [
+      "@types/node",
       "vite/client"
     ]
   }
