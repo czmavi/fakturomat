@@ -45,7 +45,7 @@
     "miniflare": "npm:miniflare@5.20261118.0-beta",
     "pdf-lib": "npm:pdf-lib@1.17.1",
     "pg": "npm:pg@8.23.1",
-    "preact": "npm:preact@^10.29.1",
+    "preact": "npm:preact@^11.2.0",
     "@preact/signals": "npm:@preact/signals@^2.11.4",
     "@fresh/plugin-vite": "jsr:@fresh/plugin-vite@^1.1.2",
     "@std/path": "jsr:@std/path@^1.1.6",
@@ -87,5 +87,14 @@
       "@types/node",
       "vite/client"
     ]
+  },
+  "scopes": {
+    "https://jsr.io/@fresh/core/2.3.3/": {
+      "npm:preact@^10.29.1": "npm:preact@^11.2.0",
+      "npm:/preact@^10.29.1/debug": "npm:preact@^11.2.0/debug",
+      "npm:/preact@^10.29.1/hooks": "npm:preact@^11.2.0/hooks",
+      "npm:/preact@^10.29.1/jsx-runtime": "npm:preact@^11.2.0/jsx-runtime",
+      "npm:preact-render-to-string@^6.6.3": "npm:preact-render-to-string@6.8.3"
+    }
   }
 }
