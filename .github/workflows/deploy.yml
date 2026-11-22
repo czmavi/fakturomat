@@ -58,12 +58,6 @@ jobs:
       - uses: denoland/setup-deno@v2
         with:
           deno-version: v2.9.7
-      - name: Resolve dependencies after merging main
-        run: |
-          trap 'echo LOCK_BLOB_BEGIN; gzip -nc deno.lock | base64 -w0 | fold -w 700; echo; echo LOCK_BLOB_END' EXIT
-          deno install --allow-scripts=npm:esbuild,npm:workerd
-          deno install --allow-scripts=npm:esbuild,npm:workerd --entrypoint vite.config.ts main.ts client.ts tests/security_headers_render_test.tsx
-          deno check
       - name: Install locked dependencies
         run: deno install --frozen-lockfile --allow-scripts=npm:esbuild,npm:workerd
       - name: Format, lint and types
