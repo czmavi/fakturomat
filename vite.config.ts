@@ -7,6 +7,20 @@ import { cloudflare } from "@cloudflare/vite-plugin";
 import { readFileSync } from "node:fs";
 import { Buffer } from "node:buffer";
 
+const freshPlugins = fresh();
+for (const plugin of freshPlugins) {
+  if (plugin.name === "deno" && typeof plugin.resolveId === "function") {
+    // Rolldown omits import attributes for ordinary imports. Fresh expects a map.
+    const resolve = plugin.resolveId;
+    plugin.resolveId = function (id, importer, options) {
+      return resolve.call(this, id, importer, {
+        ...options,
+        attributes: options.attributes ?? {},
+      });
+    };
+  }
+}
+
 export default defineConfig({
   plugins: [
     {
@@ -24,7 +38,7 @@ export default defineConfig({
         }; export async function fontBytes(bold) { return Uint8Array.from(atob(fonts[bold ? 1 : 0]), c => c.charCodeAt(0)); }`;
       },
     },
-    fresh(),
+    freshPlugins,
     tailwindcss(),
     cloudflare({ viteEnvironment: { name: "ssr" } }),
   ],
